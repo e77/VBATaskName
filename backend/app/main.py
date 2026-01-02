@@ -25,33 +25,8 @@ class Spool(BaseModel):
     remaining_g: int | None = None
 
 
-class SpoolCreate(BaseModel):
-    id: str
-    description: str
-    status: str = "in_stock"
-    material: str | None = None
-    color: str | None = None
-    remaining_g: int | None = None
-
-    @validator("status")
-    def validate_status(cls, status: str) -> str:  # noqa: D417
-        if status not in ALLOWED_STATUSES:
-            raise ValueError("Invalid status")
-        return status
-
-
-class SpoolUpdate(BaseModel):
-    description: str | None = None
-    status: str | None = None
-    material: str | None = None
-    color: str | None = None
-    remaining_g: int | None = None
-
-    @validator("status")
-    def validate_status(cls, status: str | None) -> str | None:  # noqa: D417
-        if status is not None and status not in ALLOWED_STATUSES:
-            raise ValueError("Invalid status")
-        return status
+class SpoolStatusUpdate(BaseModel):
+    status: str
 
 
 class Slot(BaseModel):
@@ -149,21 +124,20 @@ async def get_spool(spool_id: str) -> Spool:
 
 
 @app.patch("/spools/{spool_id}", response_model=Spool)
-async def update_spool(spool_id: str, payload: SpoolUpdate) -> Spool:
+async def update_spool(spool_id: str, payload: SpoolStatusUpdate) -> Spool:
     spool = SPOOLS.get(spool_id)
     if not spool:
         raise HTTPException(status_code=404, detail="Spool not found")
 
-    updates = payload.dict(exclude_unset=True)
-    if not updates:
-        raise HTTPException(status_code=400, detail="No updates provided")
-
-    if "status" in updates and updates["status"] not in ALLOWED_STATUSES:
+    allowed_statuses = {"in_stock", "opened", "assigned", "retired"}
+    if payload.status not in allowed_statuses:
         raise HTTPException(status_code=400, detail="Invalid status")
 
-    updated_spool = spool.copy(update=updates)
+    updated_spool = spool.copy(update={"status": payload.status})
     SPOOLS[spool_id] = updated_spool
-    logger.info("spool_updated", extra={"spool_id": spool_id, **updates})
+    logger.info(
+        "spool_status_updated", extra={"spool_id": spool_id, "status": payload.status}
+    )
     return updated_spool
 
 

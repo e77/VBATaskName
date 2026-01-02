@@ -33,7 +33,7 @@ def wrap(text: str, width: int) -> List[str]:
 
 def prompt_input(term: Terminal, label: str) -> str:
     print(term.clear + term.bold(label))
-    print(term.dim("Press Enter when done. ESC cancels."))
+    print(faint("Press Enter when done. ESC cancels."))
     buf: List[str] = []
     with term.cbreak():
         while True:
@@ -53,12 +53,19 @@ def prompt_input(term: Terminal, label: str) -> str:
             buf.append(str(key))
             print(key, end="", flush=True)
 
+def faint(s: str) -> str:
+    try:
+        return faint(s)
+    except Exception:
+        return s
+
 
 def render_menu(term: Terminal) -> None:
     print(term.clear + term.bold_underline("Spool Manager Terminal"))
     print(term.bold("Dungeon Trail"))
     for line in DUNGEON_FLAVOR:
-        print(term.dim("  " + line))
+        print(faint("  " + line))
+
     print()
     print(term.bold("Choose your path (press key):"))
     print("  1) AMS status overview")
@@ -74,7 +81,7 @@ def _print_lines(term: Terminal, title: str, lines: List[str]) -> None:
     print(term.clear + term.bold(title))
     for line in lines:
         print(line)
-    print(term.dim("Press b to go back."))
+    print(faint("Press b to go back."))
 
 
 def display_error(term: Terminal, error: Exception) -> None:
@@ -246,7 +253,7 @@ def check_for_updates(term: Terminal) -> None:
 
     if status.behind == 0:
         print(term.green("Already up to date."))
-        print(term.dim("Press b to go back."))
+        print(faint("Press b to go back."))
         wait_for_back(term)
         return
 
@@ -306,7 +313,7 @@ def main(argv: List[str] | None = None) -> int:
         logger.info("health_ok", extra={"base_url": client.base_url})
     except Exception as exc:  # pragma: no cover
         logger.warning("health_failed", extra={"base_url": client.base_url, "error": str(exc)})
-        print(term.dim(f"Warning: API health check failed at {client.base_url}: {exc}"))
+        print(faint(f"Warning: API health check failed at {client.base_url}: {exc}"))
 
     with term.fullscreen(), term.hidden_cursor():
         while True:
@@ -336,3 +343,4 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
+
