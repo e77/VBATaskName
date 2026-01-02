@@ -62,6 +62,18 @@ Flags can override environment variables:
 - `--token` – bearer token
 - `--timeout` – HTTP timeout in seconds
 
+## Accessing the interface
+- **Web UI (browser):**
+  - When running the Docker stack locally, browse to `http://localhost` (or `https://localhost` if you have TLS configured in `Caddyfile`).
+  - On a Raspberry Pi, point another device on the same network to `http://<pi-ip>`—Caddy publishes on port 80 by default and proxies to the frontend/back end containers.
+- **Web console capabilities:**
+  - Create and name spools (material, color, and remaining weight) directly from the browser.
+  - Add and rename AMS units with configurable slot counts so multiple loaders stay organized.
+  - Assign any spool to a specific slot with a click and see the slot IDs that map to the TUI/API.
+- **Terminal UI (TTY):**
+  - Launch directly on the Pi’s console or over SSH with `python spool_tui.py`.
+  - The TUI uses the same API base URL as the web UI; adjust via `SPOOL_API_BASE_URL`/`SPOOL_API_TOKEN` if you’re targeting a remote backend.
+
 ## Controls
 - `1` – AMS status overview
 - `2` – Inventory list

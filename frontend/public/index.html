@@ -3,80 +3,460 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Spool Manager Dashboard</title>
+    <title>Spool Manager Console</title>
     <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b172a;
+        --panel: #0f1f36;
+        --border: #1f2937;
+        --accent: #0ea5e9;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --danger: #f97316;
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+      }
       body {
-        font-family: Arial, sans-serif;
-        background: #0b172a;
-        color: #f8fafc;
         margin: 0;
-        padding: 0;
+        background: radial-gradient(circle at 10% 20%, rgba(14, 165, 233, 0.1), transparent 25%),
+          radial-gradient(circle at 90% 10%, rgba(236, 72, 153, 0.1), transparent 30%),
+          var(--bg);
+        color: var(--text);
+        min-height: 100vh;
       }
       header {
-        padding: 1.5rem;
-        background: #111827;
-        border-bottom: 1px solid #1f2937;
+        padding: 1.5rem 2rem;
+        background: #0c1a2c;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.4rem;
       }
       main {
-        padding: 2rem;
-        max-width: 960px;
-        margin: 0 auto;
-      }
-      .card {
-        background: #111827;
-        border: 1px solid #1f2937;
-        border-radius: 12px;
         padding: 1.5rem;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+        max-width: 1200px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 1rem;
       }
-      h1, h2, h3 {
-        margin: 0 0 0.5rem 0;
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.25rem;
+        box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
       }
-      p {
-        margin: 0.25rem 0;
+      .panel h2 {
+        margin-top: 0;
+        margin-bottom: 0.75rem;
+        font-size: 1.1rem;
       }
-      .chips {
-        display: flex;
+      form {
+        display: grid;
         gap: 0.5rem;
-        flex-wrap: wrap;
       }
-      .chip {
-        padding: 0.35rem 0.75rem;
-        border-radius: 999px;
-        background: #0ea5e9;
-        color: #0b172a;
+      label {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      input,
+      select,
+      button,
+      textarea {
+        width: 100%;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #0c1524;
+        color: var(--text);
+        padding: 0.6rem 0.75rem;
+        font-size: 0.95rem;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 68px;
+      }
+      button {
+        background: linear-gradient(135deg, #0ea5e9, #22c55e);
+        border: none;
+        color: #04111f;
         font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.1s ease, box-shadow 0.2s ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 28px rgba(14, 165, 233, 0.35);
+      }
+      button.danger {
+        background: #f97316;
+        color: #0c0a09;
+      }
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.5rem;
+      }
+      .table th,
+      .table td {
+        padding: 0.5rem;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+      }
+      .pill {
+        display: inline-block;
+        padding: 0.25rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #04111f;
+      }
+      .pill.stock {
+        background: #22c55e;
+      }
+      .pill.assigned {
+        background: #0ea5e9;
+      }
+      .pill.opened {
+        background: #facc15;
+      }
+      .pill.retired {
+        background: #cbd5e1;
+        color: #0f172a;
+      }
+      .slots {
+        display: grid;
+        gap: 0.75rem;
+      }
+      .slot {
+        border: 1px solid var(--border);
+        padding: 0.75rem;
+        border-radius: 10px;
+        background: #0c1524;
+      }
+      .muted {
+        color: var(--muted);
         font-size: 0.9rem;
       }
-      footer {
-        padding: 1.5rem;
-        text-align: center;
-        color: #cbd5e1;
+      .status-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .toast {
+        position: fixed;
+        bottom: 18px;
+        right: 18px;
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        background: #0c1524;
+        border: 1px solid var(--border);
+        box-shadow: 0 16px 30px rgba(0, 0, 0, 0.35);
+        color: var(--text);
+        min-width: 260px;
+        display: none;
+      }
+      .toast.visible {
+        display: block;
+      }
+      .badge {
+        padding: 0.25rem 0.45rem;
+        background: #0ea5e9;
+        border-radius: 6px;
+        color: #04111f;
+        font-weight: 700;
+        font-size: 0.8rem;
       }
     </style>
   </head>
   <body>
     <header>
-      <h1>Spool Manager</h1>
-      <p>React/Vite-ready placeholder shipped with container stack.</p>
-    </header>
-    <main>
-      <div class="card">
-        <h2>Deployment Ready</h2>
-        <p>This static page is served by Nginx in the Docker stack and can be replaced with the Vite build output.</p>
-        <div class="chips">
-          <span class="chip">FastAPI</span>
-          <span class="chip">PostgreSQL</span>
-          <span class="chip">Caddy/Traefik</span>
-          <span class="chip">Raspberry Pi</span>
-        </div>
-        <h3>Endpoints</h3>
-        <ul>
-          <li>Backend API proxied at <code>/api</code>.</li>
-          <li>Health probe at <code>/api/health</code>.</li>
-        </ul>
+      <div>
+        <div class="badge">Web Console</div>
+        <h1>Spool &amp; AMS Manager</h1>
+        <p class="muted">Assign spools, name units, and keep AMS slots in sync.</p>
       </div>
+      <div>
+        <button id="refresh">Refresh data</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>Create or name a spool</h2>
+        <form id="spool-form">
+          <div>
+            <label for="spool-id">Spool ID</label>
+            <input id="spool-id" name="id" required placeholder="spool-123" />
+          </div>
+          <div>
+            <label for="spool-description">Description</label>
+            <textarea
+              id="spool-description"
+              name="description"
+              placeholder="e.g. Bambu Matte PLA, Silver"
+              required
+            ></textarea>
+          </div>
+          <div>
+            <label for="spool-material">Material</label>
+            <input id="spool-material" name="material" placeholder="PLA, PETG" />
+          </div>
+          <div>
+            <label for="spool-color">Color</label>
+            <input id="spool-color" name="color" placeholder="Silver" />
+          </div>
+          <div>
+            <label for="spool-remaining">Remaining (g)</label>
+            <input id="spool-remaining" name="remaining_g" type="number" min="0" />
+          </div>
+          <div>
+            <label for="spool-status">Status</label>
+            <select id="spool-status" name="status">
+              <option value="in_stock">In stock</option>
+              <option value="opened">Opened</option>
+              <option value="assigned">Assigned</option>
+              <option value="retired">Retired</option>
+            </select>
+          </div>
+          <button type="submit">Save spool</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>AMS units</h2>
+        <form id="ams-form">
+          <div>
+            <label for="ams-name">Unit name</label>
+            <input id="ams-name" name="name" required placeholder="AMS-02" />
+          </div>
+          <div>
+            <label for="ams-slots">Number of slots</label>
+            <input id="ams-slots" name="slots" type="number" min="1" max="16" value="4" />
+          </div>
+          <button type="submit">Add AMS unit</button>
+        </form>
+        <div id="ams-list" class="slots" aria-live="polite" style="margin-top: 1rem"></div>
+      </section>
+
+      <section class="panel" style="grid-column: 1 / -1">
+        <h2>Spool inventory</h2>
+        <div class="muted">Click a row to edit description/status.</div>
+        <table class="table" id="spool-table" aria-live="polite"></table>
+      </section>
     </main>
-    <footer>Ready for kiosk mode — add your React bundle here.</footer>
+
+    <div class="toast" id="toast" role="status"></div>
+
+    <script>
+      const API_BASE = "/api";
+
+      const toastEl = document.getElementById("toast");
+      function toast(message, tone = "info") {
+        toastEl.textContent = message;
+        toastEl.style.borderColor = tone === "error" ? "var(--danger)" : "var(--accent)";
+        toastEl.classList.add("visible");
+        setTimeout(() => toastEl.classList.remove("visible"), 3000);
+      }
+
+      async function api(path, options = {}) {
+        const response = await fetch(`${API_BASE}${path}`, {
+          headers: {"Content-Type": "application/json", Accept: "application/json"},
+          ...options,
+        });
+        if (!response.ok) {
+          const detail = await response.json().catch(() => ({}));
+          throw new Error(detail.detail || response.statusText);
+        }
+        return response.json();
+      }
+
+      function statusPill(status) {
+        const cls = status === "in_stock" ? "stock" : status === "assigned" ? "assigned" : status === "opened" ? "opened" : "retired";
+        const label = status.replace("_", " ");
+        return `<span class="pill ${cls}">${label}</span>`;
+      }
+
+      async function loadSpools() {
+        const table = document.getElementById("spool-table");
+        table.innerHTML = "<tr><th>ID</th><th>Description</th><th>Status</th><th>Material</th><th>Color</th><th>Remaining</th></tr>";
+        try {
+          const spools = await api("/spools");
+          spools.forEach((spool) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+              <td><code>${spool.id}</code></td>
+              <td>${spool.description}</td>
+              <td>${statusPill(spool.status)}</td>
+              <td>${spool.material || ""}</td>
+              <td>${spool.color || ""}</td>
+              <td>${spool.remaining_g ?? ""}</td>
+            `;
+            row.addEventListener("click", () => openSpoolEditor(spool));
+            table.appendChild(row);
+          });
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      }
+
+      function openSpoolEditor(spool) {
+        const description = prompt("Description", spool.description);
+        if (description === null) return;
+        const status = prompt(
+          "Status (in_stock, opened, assigned, retired)",
+          spool.status
+        );
+        if (!status) return;
+        updateSpool(spool.id, {description, status});
+      }
+
+      async function updateSpool(id, payload) {
+        try {
+          await api(`/spools/${id}`, {method: "PATCH", body: JSON.stringify(payload)});
+          toast("Spool updated");
+          loadSpools();
+          loadAms();
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      }
+
+      async function submitSpool(event) {
+        event.preventDefault();
+        const form = event.target;
+        const payload = Object.fromEntries(new FormData(form));
+        if (payload.remaining_g === "") delete payload.remaining_g;
+        payload.remaining_g = payload.remaining_g ? Number(payload.remaining_g) : null;
+        try {
+          await api("/spools", {method: "POST", body: JSON.stringify(payload)});
+          toast("Spool saved");
+          form.reset();
+          loadSpools();
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      }
+
+      function renderSlot(slot, spools) {
+        const options = spools
+          .map((spool) => `<option value="${spool.id}" ${slot.spool_id === spool.id ? "selected" : ""}>${spool.description}</option>`)
+          .join("");
+        return `
+          <div class="slot">
+            <div class="status-line">
+              <strong>Slot ${slot.slot_number}</strong>
+              <div>${slot.spool_id ? statusPill("assigned") : statusPill(slot.status)}</div>
+            </div>
+            <div class="muted">ID: ${slot.id}</div>
+            <label style="margin-top: 0.5rem">Assign spool</label>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <select data-slot="${slot.id}">
+                <option value="">-- choose --</option>
+                ${options}
+              </select>
+              <button data-assign="${slot.id}" style="width: auto; padding: 0.55rem 0.9rem">Assign</button>
+            </div>
+            ${slot.spool_id ? `<div class="muted" style="margin-top:0.4rem">Currently: ${slot.spool_id}</div>` : ""}
+          </div>
+        `;
+      }
+
+      async function loadAms() {
+        const list = document.getElementById("ams-list");
+        list.innerHTML = "<div class='muted'>Loading AMS units…</div>";
+        try {
+          const [units, spools] = await Promise.all([api("/ams"), api("/spools")]);
+          list.innerHTML = "";
+          units.forEach((unit) => {
+            const wrapper = document.createElement("div");
+            wrapper.className = "slot";
+            wrapper.innerHTML = `
+              <div class="status-line">
+                <div>
+                  <strong>${unit.name}</strong>
+                  <div class="muted">ID: ${unit.id}</div>
+                </div>
+                <button class="rename" data-unit="${unit.id}" style="width:auto">Rename</button>
+              </div>
+              <div class="slots" style="margin-top:0.75rem">
+                ${unit.slots.map((slot) => renderSlot(slot, spools)).join("")}
+              </div>
+            `;
+            list.appendChild(wrapper);
+          });
+          list.querySelectorAll("button[data-assign]").forEach((btn) => {
+            btn.addEventListener("click", async (e) => {
+              e.preventDefault();
+              const slotId = Number(btn.dataset.assign);
+              const select = list.querySelector(`select[data-slot='${slotId}']`);
+              const spoolId = select.value;
+              if (!spoolId) return toast("Select a spool first", "error");
+              try {
+                await api(`/ams/slots/${slotId}/assign`, {method: "POST", body: JSON.stringify({spool_id: spoolId})});
+                toast("Slot updated");
+                loadAms();
+                loadSpools();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
+          });
+          list.querySelectorAll("button.rename").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const unitId = Number(btn.dataset.unit);
+              const name = prompt("New name for this AMS", "AMS-" + unitId);
+              if (!name) return;
+              try {
+                await api(`/ams/${unitId}`, {method: "PATCH", body: JSON.stringify({name})});
+                toast("AMS renamed");
+                loadAms();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
+          });
+        } catch (error) {
+          list.innerHTML = `<div class='muted'>${error.message}</div>`;
+        }
+      }
+
+      async function submitAms(event) {
+        event.preventDefault();
+        const form = event.target;
+        const payload = Object.fromEntries(new FormData(form));
+        payload.slots = Number(payload.slots) || 0;
+        try {
+          await api("/ams", {method: "POST", body: JSON.stringify(payload)});
+          toast("AMS unit added");
+          form.reset();
+          document.getElementById("ams-slots").value = 4;
+          loadAms();
+        } catch (error) {
+          toast(error.message, "error");
+        }
+      }
+
+      function init() {
+        document.getElementById("spool-form").addEventListener("submit", submitSpool);
+        document.getElementById("ams-form").addEventListener("submit", submitAms);
+        document.getElementById("refresh").addEventListener("click", () => {
+          loadSpools();
+          loadAms();
+        });
+        loadSpools();
+        loadAms();
+      }
+
+      document.addEventListener("DOMContentLoaded", init);
+    </script>
   </body>
 </html>
