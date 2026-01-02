@@ -18,6 +18,11 @@ A keyboard-first terminal interface built with [Blessed](https://pypi.org/projec
    ```
 2. Install dependencies:
    ```bash
+   # For Raspberry Pi OS or other PEP 668 environments
+   sudo apt install -y python3-venv python3-full
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install --upgrade pip
    pip install -r requirements.txt
    ```
 3. Ensure the FastAPI service is reachable (defaults to `http://localhost:8000`). Set overrides as needed:
