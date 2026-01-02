@@ -34,6 +34,7 @@ class Slot(BaseModel):
     slot_number: int
     status: str
     spool_id: str | None = None
+    spool: Spool | None = None
 
 
 class AmsUnit(BaseModel):
@@ -78,7 +79,7 @@ AMS_UNITS: List[AmsUnit] = [
             Slot(id=1, slot_number=1, status="loaded", spool_id="demo-1"),
             Slot(id=2, slot_number=2, status="empty"),
         ],
-    )
+    ),
 ]
 
 
@@ -154,7 +155,7 @@ async def lookup_rfid(tag: str) -> Spool:
 
 
 class AssignPayload(BaseModel):
-    spool_id: str
+    spool_id: str | None = None
 
 
 @app.post("/ams/slots/{slot_id}/assign")
@@ -185,6 +186,8 @@ async def assign_slot(slot_id: int, payload: AssignPayload) -> Dict[str, Any]:
 
 @app.get("/ams", response_model=List[AmsUnit])
 async def list_ams_units() -> List[AmsUnit]:
+    for unit in AMS_UNITS:
+        unit.slots = [_hydrate_slot(slot) for slot in unit.slots]
     return AMS_UNITS
 
 
@@ -192,7 +195,36 @@ async def list_ams_units() -> List[AmsUnit]:
 async def list_slots(unit_id: int) -> List[Slot]:
     for unit in AMS_UNITS:
         if unit.id == unit_id:
-            return unit.slots
+            return [_hydrate_slot(slot) for slot in unit.slots]
+    raise HTTPException(status_code=404, detail="AMS unit not found")
+
+
+@app.post("/ams", response_model=AmsUnit, status_code=201)
+async def create_ams_unit(payload: AmsUnitCreate) -> AmsUnit:
+    unit_id = _next_unit_id()
+    next_slot_id = _next_slot_id()
+    slots = [
+        Slot(id=next_slot_id + index, slot_number=index + 1, status="empty")
+        for index in range(payload.slots)
+    ]
+    unit = AmsUnit(id=unit_id, name=payload.name, slots=slots)
+    AMS_UNITS.append(unit)
+    logger.info("ams_unit_created", extra={"unit_id": unit_id, "slots": payload.slots})
+    return unit
+
+
+@app.patch("/ams/{unit_id}", response_model=AmsUnit)
+async def update_ams_unit(unit_id: int, payload: AmsUnitUpdate) -> AmsUnit:
+    for unit in AMS_UNITS:
+        if unit.id == unit_id:
+            updates = payload.dict(exclude_unset=True)
+            if not updates:
+                raise HTTPException(status_code=400, detail="No updates provided")
+            unit.name = updates.get("name", unit.name)
+            if "slots" in updates:
+                _resize_slots(unit, int(updates["slots"]))
+            logger.info("ams_unit_updated", extra={"unit_id": unit_id, **updates})
+            return unit
     raise HTTPException(status_code=404, detail="AMS unit not found")
 
 

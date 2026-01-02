@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 import textwrap
-from typing import List
+from typing import Dict, List
 
 from blessed import Terminal
 
@@ -26,9 +26,43 @@ DUNGEON_FLAVOR = [
     "Crates of color and material line the hall; choose your next action wisely.",
 ]
 
+COLOR_MAP: Dict[str, str] = {
+    "black": "black",
+    "white": "white",
+    "silver": "bright_white",
+    "gray": "grey",
+    "grey": "grey",
+    "red": "red",
+    "green": "green",
+    "blue": "blue",
+    "yellow": "yellow",
+    "orange": "orange_red",
+    "purple": "magenta",
+    "pink": "pink",
+    "brown": "brown",
+}
+
 
 def wrap(text: str, width: int) -> List[str]:
     return textwrap.wrap(text, width=width) if text else [""]
+
+
+def color_block(term: Terminal, color: str | None) -> str:
+    if not color:
+        return "[     ]"
+    key = COLOR_MAP.get(color.lower()) if isinstance(color, str) else None
+    if key and hasattr(term, key):
+        paint = getattr(term, key)
+        return paint("[####]") + term.normal
+    if isinstance(color, str) and color.startswith("#") and len(color) == 7:
+        try:
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+            return term.on_color_rgb(r, g, b) + "     " + term.normal
+        except Exception:
+            return "[????]"
+    return f"[{color}]"
 
 
 def prompt_input(term: Terminal, label: str) -> str:
@@ -102,18 +136,29 @@ def view_ams_status(term: Terminal, client: SpoolManagerAPI) -> None:
     for unit in units:
         unit_id = unit.get("id")
         name = unit.get("name", "<unnamed>")
-        lines.append(f"[{unit_id}] {name}")
         try:
             slots = client.list_slots_for_unit(unit_id)
         except Exception as exc:  # pragma: no cover
-            lines.append(term.red(f"  Failed to load slots: {exc}"))
+            lines.append(term.red(f"[{unit_id}] {name} - failed to load slots: {exc}"))
             continue
+        lines.append(term.bold(f"[{unit_id}] {name} (slots: {len(slots)})"))
         for slot in slots:
             slot_no = slot.get("slot_number")
             status = slot.get("status", "?")
             spool = slot.get("spool") or slot.get("spool_id")
-            display = spool.get("description") if isinstance(spool, dict) else spool or "<empty>"
-            lines.append(f"  Slot {slot_no}: {status} | {display}")
+            color = None
+            desc = "<empty>"
+            remaining = None
+            if isinstance(spool, dict):
+                desc = spool.get("description", "<unknown>")
+                color = spool.get("color")
+                remaining = spool.get("remaining_g")
+            elif isinstance(spool, str):
+                desc = spool
+            patch = color_block(term, color)
+            remaining_text = f" | {remaining}g" if remaining is not None else ""
+            lines.append(f"  Slot {slot_no}: {status} {patch} {desc}{remaining_text}")
+        lines.append("")
     _print_lines(term, "AMS Status", lines)
     wait_for_back(term)
 
@@ -130,16 +175,13 @@ def view_inventory(term: Terminal, client: SpoolManagerAPI) -> None:
     if not spools:
         lines.append("No spools found.")
     for spool in spools:
-        line = f"[{spool.get('id')}] {spool.get('description', 'No description')}"
+        desc = spool.get("description", "No description")
         status = spool.get("status")
-        material = spool.get("material", {}).get("name") if isinstance(spool.get("material"), dict) else spool.get(
-            "material"
-        )
-        color = spool.get("color", {}).get("name") if isinstance(spool.get("color"), dict) else spool.get("color")
-        meta = [part for part in [material, color, status] if part]
-        if meta:
-            line += " | " + ", ".join(meta)
-        lines.extend(wrap(line, width=term.width - 2))
+        remaining = spool.get("remaining_g")
+        color = spool.get("color")
+        patch = color_block(term, color)
+        remaining_text = f" - {remaining}g left" if remaining is not None else ""
+        lines.extend(wrap(f"[{spool.get('id')}] {patch} {desc} [{status}]{remaining_text}", width=term.width - 2))
     _print_lines(term, "Inventory", lines)
     wait_for_back(term)
 
