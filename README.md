@@ -7,6 +7,7 @@ A keyboard-first terminal interface built with [Blessed](https://pypi.org/projec
 - **Inventory list**: browse spools with material/color/status context.
 - **Lookup**: search by spool ID, QR code, or RFID tag.
 - **Actions**: assign a spool to a slot, mark a spool opened, or return it to stock.
+- **Self-update on Pi**: check for updates and redeploy the Compose stack without losing data.
 - **Keyboard shortcuts**: numbered menu with `b`/`ESC` to back out, `q` to quit.
 - **Dungeon flavor**: lightweight ASCII narration during navigation.
 
@@ -61,14 +62,47 @@ Flags can override environment variables:
 - `--token` – bearer token
 - `--timeout` – HTTP timeout in seconds
 
+## Accessing the interface
+- **Web UI (browser):**
+  - When running the Docker stack locally, browse to `http://localhost` (or `https://localhost` if you have TLS configured in `Caddyfile`).
+  - On a Raspberry Pi, point another device on the same network to `http://<pi-ip>`—Caddy publishes on port 80 by default and proxies to the frontend/back end containers.
+- **Web console capabilities:**
+  - Create and name spools (material, color, and remaining weight) directly from the browser.
+  - Add and rename AMS units with configurable slot counts so multiple loaders stay organized.
+  - Assign any spool to a specific slot with a click and see the slot IDs that map to the TUI/API.
+- **Terminal UI (TTY):**
+  - Launch directly on the Pi’s console or over SSH with `python spool_tui.py`.
+  - The TUI uses the same API base URL as the web UI; adjust via `SPOOL_API_BASE_URL`/`SPOOL_API_TOKEN` if you’re targeting a remote backend.
+
 ## Controls
 - `1` – AMS status overview
 - `2` – Inventory list
 - `3` – Spool lookup (ID / QR / RFID)
 - `4` – Assign slot
 - `5` – Mark spool opened / back to stock
+- `6` – Check for updates / redeploy containers
 - `b` or `ESC` – back from subview
 - `q` – quit the app
+
+## Updating a deployed Raspberry Pi
+Choose menu option `6` in the TUI to check for new commits on the current branch. If updates
+are available, confirm with `u` to:
+
+- Fast-forward the working tree from the configured remote.
+- Pull the latest container images and rebuild the stack.
+- Restart services with `docker compose up -d` while keeping the Postgres volume untouched,
+  so existing spool data remains intact.
+
+You can also trigger the same flow non-interactively via:
+
+```bash
+SPOOL_REPO_ROOT=/path/to/VBATaskName python - <<'PY'
+from spooltui.update import apply_updates, check_updates
+status = check_updates()
+if status.behind:
+    apply_updates(status)
+PY
+```
 
 ## Notes
 - API errors are surfaced inline so operators can spot connectivity/auth issues quickly.

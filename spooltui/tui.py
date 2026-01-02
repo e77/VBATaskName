@@ -4,11 +4,12 @@ import argparse
 import logging
 import os
 import textwrap
-from typing import List
+from typing import Dict, List
 
 from blessed import Terminal
 
 from .api_client import SpoolManagerAPI
+from .update import UpdateError, apply_updates, check_updates
 
 
 logging.basicConfig(
@@ -25,9 +26,43 @@ DUNGEON_FLAVOR = [
     "Crates of color and material line the hall; choose your next action wisely.",
 ]
 
+COLOR_MAP: Dict[str, str] = {
+    "black": "black",
+    "white": "white",
+    "silver": "bright_white",
+    "gray": "grey",
+    "grey": "grey",
+    "red": "red",
+    "green": "green",
+    "blue": "blue",
+    "yellow": "yellow",
+    "orange": "orange_red",
+    "purple": "magenta",
+    "pink": "pink",
+    "brown": "brown",
+}
+
 
 def wrap(text: str, width: int) -> List[str]:
     return textwrap.wrap(text, width=width) if text else [""]
+
+
+def color_block(term: Terminal, color: str | None) -> str:
+    if not color:
+        return "[     ]"
+    key = COLOR_MAP.get(color.lower()) if isinstance(color, str) else None
+    if key and hasattr(term, key):
+        paint = getattr(term, key)
+        return paint("[####]") + term.normal
+    if isinstance(color, str) and color.startswith("#") and len(color) == 7:
+        try:
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+            return term.on_color_rgb(r, g, b) + "     " + term.normal
+        except Exception:
+            return "[????]"
+    return f"[{color}]"
 
 
 def prompt_input(term: Terminal, label: str) -> str:
@@ -65,6 +100,10 @@ def render_menu(term: Terminal) -> None:
     print("  3) Spool lookup (ID / QR / RFID)")
     print("  4) Assign slot")
     print("  5) Mark spool opened / back to stock")
+    print("  6) Adjust remaining (±10g with arrows)")
+    print("  7) Delete spool / clear demo data")
+    print("  8) Edit AMS slot count")
+    print("  9) Check for updates / redeploy")
     print("  q) Quit")
 
 
@@ -93,18 +132,29 @@ def view_ams_status(term: Terminal, client: SpoolManagerAPI) -> None:
     for unit in units:
         unit_id = unit.get("id")
         name = unit.get("name", "<unnamed>")
-        lines.append(f"[{unit_id}] {name}")
         try:
             slots = client.list_slots_for_unit(unit_id)
         except Exception as exc:  # pragma: no cover
-            lines.append(term.red(f"  Failed to load slots: {exc}"))
+            lines.append(term.red(f"[{unit_id}] {name} - failed to load slots: {exc}"))
             continue
+        lines.append(term.bold(f"[{unit_id}] {name} (slots: {len(slots)})"))
         for slot in slots:
             slot_no = slot.get("slot_number")
             status = slot.get("status", "?")
             spool = slot.get("spool") or slot.get("spool_id")
-            display = spool.get("description") if isinstance(spool, dict) else spool or "<empty>"
-            lines.append(f"  Slot {slot_no}: {status} | {display}")
+            color = None
+            desc = "<empty>"
+            remaining = None
+            if isinstance(spool, dict):
+                desc = spool.get("description", "<unknown>")
+                color = spool.get("color")
+                remaining = spool.get("remaining_g")
+            elif isinstance(spool, str):
+                desc = spool
+            patch = color_block(term, color)
+            remaining_text = f" | {remaining}g" if remaining is not None else ""
+            lines.append(f"  Slot {slot_no}: {status} {patch} {desc}{remaining_text}")
+        lines.append("")
     _print_lines(term, "AMS Status", lines)
     wait_for_back(term)
 
@@ -121,16 +171,13 @@ def view_inventory(term: Terminal, client: SpoolManagerAPI) -> None:
     if not spools:
         lines.append("No spools found.")
     for spool in spools:
-        line = f"[{spool.get('id')}] {spool.get('description', 'No description')}"
+        desc = spool.get("description", "No description")
         status = spool.get("status")
-        material = spool.get("material", {}).get("name") if isinstance(spool.get("material"), dict) else spool.get(
-            "material"
-        )
-        color = spool.get("color", {}).get("name") if isinstance(spool.get("color"), dict) else spool.get("color")
-        meta = [part for part in [material, color, status] if part]
-        if meta:
-            line += " | " + ", ".join(meta)
-        lines.extend(wrap(line, width=term.width - 2))
+        remaining = spool.get("remaining_g")
+        color = spool.get("color")
+        patch = color_block(term, color)
+        remaining_text = f" - {remaining}g left" if remaining is not None else ""
+        lines.extend(wrap(f"[{spool.get('id')}] {patch} {desc} [{status}]{remaining_text}", width=term.width - 2))
     _print_lines(term, "Inventory", lines)
     wait_for_back(term)
 
@@ -219,6 +266,150 @@ def mark_status(term: Terminal, client: SpoolManagerAPI) -> None:
     wait_for_back(term)
 
 
+def adjust_remaining(term: Terminal, client: SpoolManagerAPI) -> None:
+    spool_id = prompt_input(term, "Enter spool ID to adjust: ")
+    if not spool_id:
+        return
+    try:
+        spool = client.lookup_spool(spool_id)
+    except Exception as exc:  # pragma: no cover
+        display_error(term, exc)
+        wait_for_back(term)
+        return
+
+    current = spool.get("remaining_g") or 0
+    value = current
+    print(term.clear + term.bold(f"Adjust remaining for {spool_id}"))
+    print(term.dim("Use UP/DOWN arrows for ±10g, Enter to save, ESC to cancel."))
+    while True:
+        print(term.move_x(0) + f"Remaining: {value} g    ", end="", flush=True)
+        with term.cbreak():
+            key = term.inkey()
+        if key.name == "KEY_ESCAPE":
+            return
+        if key.name == "KEY_UP":
+            value += 10
+            continue
+        if key.name == "KEY_DOWN":
+            value = max(0, value - 10)
+            continue
+        if key.name == "KEY_ENTER":
+            try:
+                client.update_spool(spool_id, {"remaining_g": value})
+                logger.info("remaining_updated", extra={"spool_id": spool_id, "remaining_g": value})
+            except Exception as exc:  # pragma: no cover
+                display_error(term, exc)
+                wait_for_back(term)
+                return
+            _print_lines(term, "Remaining updated", [f"{spool_id} now has {value} g remaining."])
+            wait_for_back(term)
+            return
+
+
+def delete_spool(term: Terminal, client: SpoolManagerAPI) -> None:
+    spool_id = prompt_input(term, "Enter spool ID to delete: ")
+    if not spool_id:
+        return
+    print(term.clear + term.bold(f"Delete {spool_id}?"))
+    print(term.red("This will remove it from any AMS slot."))
+    print("Press y to confirm, anything else to cancel.")
+    with term.cbreak():
+        key = term.inkey()
+    if str(key).lower() != "y":
+        return
+    try:
+        client.delete_spool(spool_id)
+        logger.info("spool_deleted", extra={"spool_id": spool_id})
+    except Exception as exc:  # pragma: no cover
+        display_error(term, exc)
+        wait_for_back(term)
+        return
+    _print_lines(term, "Spool deleted", [f"{spool_id} removed and any slots cleared."])
+    wait_for_back(term)
+
+
+def edit_ams_slots(term: Terminal, client: SpoolManagerAPI) -> None:
+    unit_id_input = prompt_input(term, "Enter AMS unit ID to resize: ")
+    if not unit_id_input:
+        return
+    slots_input = prompt_input(term, "How many slots should it have (1-16)? ")
+    if not slots_input:
+        return
+    try:
+        unit_id = int(unit_id_input)
+        slots = int(slots_input)
+    except ValueError:
+        display_error(term, ValueError("Please enter numeric values."))
+        wait_for_back(term)
+        return
+    try:
+        client.update_ams_unit(unit_id, {"slots": slots})
+        logger.info("ams_resized", extra={"unit_id": unit_id, "slots": slots})
+    except Exception as exc:  # pragma: no cover
+        display_error(term, exc)
+        wait_for_back(term)
+        return
+    _print_lines(term, "AMS updated", [f"Unit {unit_id} now has {slots} slots."])
+    wait_for_back(term)
+
+
+def check_for_updates(term: Terminal) -> None:
+    try:
+        status = check_updates()
+    except UpdateError as exc:  # pragma: no cover - environment dependent
+        display_error(term, exc)
+        wait_for_back(term)
+        return
+
+    lines: List[str] = [
+        f"Repository: {status.repo_root}",
+        f"Remote: {status.remote}/{status.branch}",
+        f"Local revision: {status.local_revision}",
+        f"Remote revision: {status.remote_revision}",
+        f"Ahead of remote: {status.ahead} commits",
+        f"Behind remote: {status.behind} commits",
+    ]
+    if status.dirty:
+        lines.append(term.yellow("Working tree has local changes; update may fail."))
+
+    print(term.clear + term.bold("Update check"))
+    for line in lines:
+        print(line)
+
+    if status.behind == 0:
+        print(term.green("Already up to date."))
+        print(term.dim("Press b to go back."))
+        wait_for_back(term)
+        return
+
+    print(term.bold("Press u to pull latest and restart containers, or b to go back."))
+    with term.cbreak():
+        while True:
+            key = term.inkey()
+            if not key:
+                continue
+            key_str = str(key).lower()
+            if key_str == "b" or key.name == "KEY_ESCAPE":
+                return
+            if key_str == "u":
+                try:
+                    refreshed_status, logs = apply_updates(status)
+                except UpdateError as exc:  # pragma: no cover - environment dependent
+                    display_error(term, exc)
+                    wait_for_back(term)
+                    return
+
+                log_lines = logs or ["No output emitted by update commands."]
+                summary = [
+                    term.green("Update complete."),
+                    f"Now at {refreshed_status.local_revision}",
+                    "Containers restarted via docker compose.",
+                ]
+                _print_lines(term, "Updates applied", log_lines + ["", *summary])
+                wait_for_back(term)
+                return
+
+
 def wait_for_back(term: Terminal) -> None:
     with term.cbreak():
         while True:
@@ -269,6 +460,14 @@ def main(argv: List[str] | None = None) -> int:
                 assign_slot(term, client)
             elif key_str == "5":
                 mark_status(term, client)
+            elif key_str == "6":
+                adjust_remaining(term, client)
+            elif key_str == "7":
+                delete_spool(term, client)
+            elif key_str == "8":
+                edit_ams_slots(term, client)
+            elif key_str == "9":
+                check_for_updates(term)
     print(term.clear + term.bold("Farewell, adventurer."))
     return 0
 
