@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spool Manager Dashboard</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #0b172a;
+        color: #f8fafc;
+        margin: 0;
+        padding: 0;
+      }
+      header {
+        padding: 1.5rem;
+        background: #111827;
+        border-bottom: 1px solid #1f2937;
+      }
+      main {
+        padding: 2rem;
+        max-width: 960px;
+        margin: 0 auto;
+      }
+      .card {
+        background: #111827;
+        border: 1px solid #1f2937;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+      }
+      h1, h2, h3 {
+        margin: 0 0 0.5rem 0;
+      }
+      p {
+        margin: 0.25rem 0;
+      }
+      .chips {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .chip {
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        background: #0ea5e9;
+        color: #0b172a;
+        font-weight: 700;
+        font-size: 0.9rem;
+      }
+      footer {
+        padding: 1.5rem;
+        text-align: center;
+        color: #cbd5e1;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Spool Manager</h1>
+      <p>React/Vite-ready placeholder shipped with container stack.</p>
+    </header>
+    <main>
+      <div class="card">
+        <h2>Deployment Ready</h2>
+        <p>This static page is served by Nginx in the Docker stack and can be replaced with the Vite build output.</p>
+        <div class="chips">
+          <span class="chip">FastAPI</span>
+          <span class="chip">PostgreSQL</span>
+          <span class="chip">Caddy/Traefik</span>
+          <span class="chip">Raspberry Pi</span>
+        </div>
+        <h3>Endpoints</h3>
+        <ul>
+          <li>Backend API proxied at <code>/api</code>.</li>
+          <li>Health probe at <code>/api/health</code>.</li>
+        </ul>
+      </div>
+    </main>
+    <footer>Ready for kiosk mode — add your React bundle here.</footer>
+  </body>
+</html>

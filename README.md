@@ -25,6 +25,16 @@ A keyboard-first terminal interface built with [Blessed](https://pypi.org/projec
    python spool_tui.py
    ```
 
+### Docker Compose stack
+Run the full kiosk stack (FastAPI backend, Nginx-served frontend, PostgreSQL, Caddy proxy, and pg_dump backups) for either AMD64 or Raspberry Pi:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Set `DOCKER_PLATFORM=linux/arm64/v8` in `.env` for Pi builds. Health checks are enabled for all services, and nightly backups drop into `backup/dumps/` by default.
+
 Flags can override environment variables:
 - `--base-url` – API root URL
 - `--token` – bearer token
