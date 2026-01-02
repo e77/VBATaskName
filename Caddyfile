@@ -1,0 +1,16 @@
+{
+  auto_https off
+}
+
+:80 {
+  encode gzip
+  @api path /api/*
+  reverse_proxy @api backend:8000 {
+    header_up Host {host}
+  }
+  handle_path /api/* {
+    uri strip_prefix /api
+    reverse_proxy backend:8000
+  }
+  reverse_proxy frontend:80
+}

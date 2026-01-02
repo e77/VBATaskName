@@ -1,0 +1,93 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-spool}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spoolpass}
+      POSTGRES_DB: ${POSTGRES_DB:-spooldb}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm64/v8
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-spool}:${POSTGRES_PASSWORD:-spoolpass}@db:5432/${POSTGRES_DB:-spooldb}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm64/v8
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "4173:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  reverse-proxy:
+    image: caddy:2.7-alpine
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  db-backup:
+    image: postgres:16-alpine
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-spool}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spoolpass}
+      POSTGRES_DB: ${POSTGRES_DB:-spooldb}
+      POSTGRES_HOST: db
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-86400}
+    volumes:
+      - ./backup:/backup
+      - db-data:/var/lib/postgresql/data:ro
+    entrypoint: ["/backup/backup.sh"]
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
