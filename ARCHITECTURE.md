@@ -119,8 +119,9 @@ Responses use pagination metadata and return minimal spool/slot DTOs to keep the
 - FastAPI dependencies enforce role checks per route; audit with `usage_events.created_by`.
 
 ## Integrations
-- **QR Scanning**: React page uses `@zxing/browser` or `jsqr` to read camera frames; decoded value triggers `/spools/lookup/qr/{code}`.
-- **RFID**: Pi/Arduino posts `{ "rfid": "TAG", "slot": 3, "unit": "AMS-A" }` to `/integrations/rfid`. Backend resolves spool/slot, creates usage event, and returns current status. MQTT bridge optional via paho-mqtt client pushing to same handler.
+- **QR Scanning**: React page uses `@zxing/browser` or `jsqr` to read camera frames. Once a code is decoded the app calls `POST /api/spools/:id/scan` to load the detail view and optionally start an assignment flow in one step.
+- **RFID**: Raspberry Pi/Arduino reads tags over USB or serial and posts `{ "rfid": "TAG", "slot": 3, "unit": "AMS-A" }` to `/integrations/rfid`. The API resolves the spool by the RFID UID, returns the status, and the Pi can drive LED/buzzer feedback based on the response. MQTT bridge optional via paho-mqtt client pushing to the same handler.
+- **Manual Lookup**: Operators can fall back to entering a spool ID or scanning a plain barcode to retrieve details when QR/RFID is unavailable.
 
 ## Frontend Experience (React)
 - **Dashboard**: two AMS unit cards showing per-slot status (color chips for material, badges for remaining/cost). Inline slot assignment via dropdown + quick search.
