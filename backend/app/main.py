@@ -22,6 +22,10 @@ class Spool(BaseModel):
     remaining_g: int | None = None
 
 
+class SpoolStatusUpdate(BaseModel):
+    status: str
+
+
 class Slot(BaseModel):
     slot_number: int
     status: str
@@ -81,6 +85,24 @@ async def get_spool(spool_id: str) -> Spool:
     if not spool:
         raise HTTPException(status_code=404, detail="Spool not found")
     return spool
+
+
+@app.patch("/spools/{spool_id}", response_model=Spool)
+async def update_spool(spool_id: str, payload: SpoolStatusUpdate) -> Spool:
+    spool = SPOOLS.get(spool_id)
+    if not spool:
+        raise HTTPException(status_code=404, detail="Spool not found")
+
+    allowed_statuses = {"in_stock", "opened", "assigned", "retired"}
+    if payload.status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    updated_spool = spool.copy(update={"status": payload.status})
+    SPOOLS[spool_id] = updated_spool
+    logger.info(
+        "spool_status_updated", extra={"spool_id": spool_id, "status": payload.status}
+    )
+    return updated_spool
 
 
 @app.get("/spools/lookup/qr/{code}", response_model=Spool)

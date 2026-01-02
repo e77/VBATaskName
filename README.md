@@ -7,6 +7,7 @@ A keyboard-first terminal interface built with [Blessed](https://pypi.org/projec
 - **Inventory list**: browse spools with material/color/status context.
 - **Lookup**: search by spool ID, QR code, or RFID tag.
 - **Actions**: assign a spool to a slot, mark a spool opened, or return it to stock.
+- **Self-update on Pi**: check for updates and redeploy the Compose stack without losing data.
 - **Keyboard shortcuts**: numbered menu with `b`/`ESC` to back out, `q` to quit.
 - **Dungeon flavor**: lightweight ASCII narration during navigation.
 
@@ -67,8 +68,29 @@ Flags can override environment variables:
 - `3` – Spool lookup (ID / QR / RFID)
 - `4` – Assign slot
 - `5` – Mark spool opened / back to stock
+- `6` – Check for updates / redeploy containers
 - `b` or `ESC` – back from subview
 - `q` – quit the app
+
+## Updating a deployed Raspberry Pi
+Choose menu option `6` in the TUI to check for new commits on the current branch. If updates
+are available, confirm with `u` to:
+
+- Fast-forward the working tree from the configured remote.
+- Pull the latest container images and rebuild the stack.
+- Restart services with `docker compose up -d` while keeping the Postgres volume untouched,
+  so existing spool data remains intact.
+
+You can also trigger the same flow non-interactively via:
+
+```bash
+SPOOL_REPO_ROOT=/path/to/VBATaskName python - <<'PY'
+from spooltui.update import apply_updates, check_updates
+status = check_updates()
+if status.behind:
+    apply_updates(status)
+PY
+```
 
 ## Notes
 - API errors are surfaced inline so operators can spot connectivity/auth issues quickly.
