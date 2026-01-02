@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import textwrap
 from typing import List
@@ -8,6 +9,14 @@ from typing import List
 from blessed import Terminal
 
 from .api_client import SpoolManagerAPI
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    filename=os.getenv("SPOOL_TUI_LOG", "spooltui.log"),
+)
+logger = logging.getLogger("spooltui")
 
 
 DUNGEON_FLAVOR = [
@@ -140,7 +149,9 @@ def view_spool_lookup(term: Terminal, client: SpoolManagerAPI) -> None:
         return
     try:
         spool = client.lookup_spool(identifier, mode=mode)
+        logger.info("lookup", extra={"mode": mode, "identifier": identifier})
     except Exception as exc:  # pragma: no cover
+        logger.warning("lookup_failed", extra={"mode": mode, "identifier": identifier, "error": str(exc)})
         display_error(term, exc)
         wait_for_back(term)
         return
@@ -175,7 +186,9 @@ def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
         return
     try:
         result = client.assign_slot(int(slot_id), spool_id)
+        logger.info("assign_slot", extra={"slot_id": slot_id, "spool_id": spool_id})
     except Exception as exc:  # pragma: no cover
+        logger.warning("assign_slot_failed", extra={"slot_id": slot_id, "spool_id": spool_id, "error": str(exc)})
         display_error(term, exc)
         wait_for_back(term)
         return
@@ -196,7 +209,9 @@ def mark_status(term: Terminal, client: SpoolManagerAPI) -> None:
     status = "opened" if str(key) == "o" else "in_stock"
     try:
         result = client.mark_spool_status(spool_id, status=status)
+        logger.info("mark_status", extra={"spool_id": spool_id, "status": status})
     except Exception as exc:  # pragma: no cover
+        logger.warning("mark_status_failed", extra={"spool_id": spool_id, "status": status, "error": str(exc)})
         display_error(term, exc)
         wait_for_back(term)
         return
@@ -219,8 +234,20 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument("--timeout", type=int, default=10, help="HTTP timeout in seconds")
     args = parser.parse_args(argv)
 
-    client = SpoolManagerAPI(base_url=args.base_url, token=args.token, timeout=args.timeout)
+    client = SpoolManagerAPI(
+        base_url=args.base_url,
+        token=args.token,
+        timeout=args.timeout,
+        offline_cache=os.getenv("SPOOL_OFFLINE_CACHE") is not None,
+    )
     term = Terminal()
+
+    try:
+        client.health_check()
+        logger.info("health_ok", extra={"base_url": client.base_url})
+    except Exception as exc:  # pragma: no cover
+        logger.warning("health_failed", extra={"base_url": client.base_url, "error": str(exc)})
+        print(term.dim(f"Warning: API health check failed at {client.base_url}: {exc}"))
 
     with term.fullscreen(), term.hidden_cursor():
         while True:
