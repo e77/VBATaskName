@@ -9,6 +9,7 @@ from typing import List
 from blessed import Terminal
 
 from .api_client import SpoolManagerAPI
+from .update import UpdateError, apply_updates, check_updates
 
 
 logging.basicConfig(
@@ -65,6 +66,7 @@ def render_menu(term: Terminal) -> None:
     print("  3) Spool lookup (ID / QR / RFID)")
     print("  4) Assign slot")
     print("  5) Mark spool opened / back to stock")
+    print("  6) Check for updates / redeploy")
     print("  q) Quit")
 
 
@@ -219,6 +221,63 @@ def mark_status(term: Terminal, client: SpoolManagerAPI) -> None:
     wait_for_back(term)
 
 
+def check_for_updates(term: Terminal) -> None:
+    try:
+        status = check_updates()
+    except UpdateError as exc:  # pragma: no cover - environment dependent
+        display_error(term, exc)
+        wait_for_back(term)
+        return
+
+    lines: List[str] = [
+        f"Repository: {status.repo_root}",
+        f"Remote: {status.remote}/{status.branch}",
+        f"Local revision: {status.local_revision}",
+        f"Remote revision: {status.remote_revision}",
+        f"Ahead of remote: {status.ahead} commits",
+        f"Behind remote: {status.behind} commits",
+    ]
+    if status.dirty:
+        lines.append(term.yellow("Working tree has local changes; update may fail."))
+
+    print(term.clear + term.bold("Update check"))
+    for line in lines:
+        print(line)
+
+    if status.behind == 0:
+        print(term.green("Already up to date."))
+        print(term.dim("Press b to go back."))
+        wait_for_back(term)
+        return
+
+    print(term.bold("Press u to pull latest and restart containers, or b to go back."))
+    with term.cbreak():
+        while True:
+            key = term.inkey()
+            if not key:
+                continue
+            key_str = str(key).lower()
+            if key_str == "b" or key.name == "KEY_ESCAPE":
+                return
+            if key_str == "u":
+                try:
+                    refreshed_status, logs = apply_updates(status)
+                except UpdateError as exc:  # pragma: no cover - environment dependent
+                    display_error(term, exc)
+                    wait_for_back(term)
+                    return
+
+                log_lines = logs or ["No output emitted by update commands."]
+                summary = [
+                    term.green("Update complete."),
+                    f"Now at {refreshed_status.local_revision}",
+                    "Containers restarted via docker compose.",
+                ]
+                _print_lines(term, "Updates applied", log_lines + ["", *summary])
+                wait_for_back(term)
+                return
+
+
 def wait_for_back(term: Terminal) -> None:
     with term.cbreak():
         while True:
@@ -269,6 +328,8 @@ def main(argv: List[str] | None = None) -> int:
                 assign_slot(term, client)
             elif key_str == "5":
                 mark_status(term, client)
+            elif key_str == "6":
+                check_for_updates(term)
     print(term.clear + term.bold("Farewell, adventurer."))
     return 0
 
