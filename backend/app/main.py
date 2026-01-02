@@ -25,33 +25,8 @@ class Spool(BaseModel):
     remaining_g: int | None = None
 
 
-class SpoolCreate(BaseModel):
-    id: str
-    description: str
-    status: str = "in_stock"
-    material: str | None = None
-    color: str | None = None
-    remaining_g: int | None = None
-
-    @validator("status")
-    def validate_status(cls, status: str) -> str:  # noqa: D417
-        if status not in ALLOWED_STATUSES:
-            raise ValueError("Invalid status")
-        return status
-
-
-class SpoolUpdate(BaseModel):
-    description: str | None = None
-    status: str | None = None
-    material: str | None = None
-    color: str | None = None
-    remaining_g: int | None = None
-
-    @validator("status")
-    def validate_status(cls, status: str | None) -> str | None:  # noqa: D417
-        if status is not None and status not in ALLOWED_STATUSES:
-            raise ValueError("Invalid status")
-        return status
+class SpoolStatusUpdate(BaseModel):
+    status: str
 
 
 class Slot(BaseModel):
@@ -75,7 +50,6 @@ class AmsUnitCreate(BaseModel):
 
 class AmsUnitUpdate(BaseModel):
     name: str | None = None
-    slots: int | None = Field(default=None, ge=1, le=16)
 
 
 SPOOLS: Dict[str, Spool] = {
@@ -104,18 +78,6 @@ AMS_UNITS: List[AmsUnit] = [
         slots=[
             Slot(id=1, slot_number=1, status="loaded", spool_id="demo-1"),
             Slot(id=2, slot_number=2, status="empty"),
-            Slot(id=3, slot_number=3, status="empty"),
-            Slot(id=4, slot_number=4, status="empty"),
-        ],
-    ),
-    AmsUnit(
-        id=2,
-        name="AMS-02",
-        slots=[
-            Slot(id=5, slot_number=1, status="empty"),
-            Slot(id=6, slot_number=2, status="empty"),
-            Slot(id=7, slot_number=3, status="empty"),
-            Slot(id=8, slot_number=4, status="empty"),
         ],
     ),
 ]
@@ -129,37 +91,6 @@ def _next_slot_id() -> int:
 def _next_unit_id() -> int:
     existing_ids = [unit.id for unit in AMS_UNITS]
     return max(existing_ids, default=0) + 1
-
-
-def _hydrate_slot(slot: Slot) -> Slot:
-    if slot.spool_id:
-        slot.spool = SPOOLS.get(slot.spool_id)
-    else:
-        slot.spool = None
-    return slot
-
-
-def _resize_slots(unit: AmsUnit, slots: int) -> None:
-    """Grow or shrink slots while preserving existing assignments."""
-
-    if slots == len(unit.slots):
-        return
-
-    if slots > len(unit.slots):
-        start_id = _next_slot_id()
-        new_slots = [
-            Slot(id=start_id + idx, slot_number=len(unit.slots) + idx + 1, status="empty")
-            for idx in range(slots - len(unit.slots))
-        ]
-        unit.slots.extend(new_slots)
-    else:
-        # Remove highest-numbered slots first
-        unit.slots.sort(key=lambda s: s.slot_number)
-        to_remove = [s for s in unit.slots if s.slot_number > slots]
-        for slot in to_remove:
-            slot.spool_id = None
-            slot.status = "empty"
-        unit.slots = [s for s in unit.slots if s.slot_number <= slots]
 
 
 @app.get("/health")
@@ -194,39 +125,21 @@ async def get_spool(spool_id: str) -> Spool:
 
 
 @app.patch("/spools/{spool_id}", response_model=Spool)
-async def update_spool(spool_id: str, payload: SpoolUpdate) -> Spool:
+async def update_spool(spool_id: str, payload: SpoolStatusUpdate) -> Spool:
     spool = SPOOLS.get(spool_id)
     if not spool:
         raise HTTPException(status_code=404, detail="Spool not found")
 
-    updates = payload.dict(exclude_unset=True)
-    if not updates:
-        raise HTTPException(status_code=400, detail="No updates provided")
-
-    if "status" in updates and updates["status"] not in ALLOWED_STATUSES:
+    allowed_statuses = {"in_stock", "opened", "assigned", "retired"}
+    if payload.status not in allowed_statuses:
         raise HTTPException(status_code=400, detail="Invalid status")
 
-    updated_spool = spool.copy(update=updates)
+    updated_spool = spool.copy(update={"status": payload.status})
     SPOOLS[spool_id] = updated_spool
-    logger.info("spool_updated", extra={"spool_id": spool_id, **updates})
+    logger.info(
+        "spool_status_updated", extra={"spool_id": spool_id, "status": payload.status}
+    )
     return updated_spool
-
-
-@app.delete("/spools/{spool_id}", status_code=204)
-async def delete_spool(spool_id: str) -> None:
-    if spool_id not in SPOOLS:
-        raise HTTPException(status_code=404, detail="Spool not found")
-
-    # Clear any slots referencing this spool
-    for unit in AMS_UNITS:
-        for slot in unit.slots:
-            if slot.spool_id == spool_id:
-                slot.spool_id = None
-                slot.spool = None
-                slot.status = "empty"
-
-    del SPOOLS[spool_id]
-    logger.info("spool_deleted", extra={"spool_id": spool_id})
 
 
 @app.get("/spools/lookup/qr/{code}", response_model=Spool)
@@ -247,17 +160,16 @@ class AssignPayload(BaseModel):
 
 @app.post("/ams/slots/{slot_id}/assign")
 async def assign_slot(slot_id: int, payload: AssignPayload) -> Dict[str, Any]:
-    spool = SPOOLS.get(payload.spool_id) if payload.spool_id else None
-    if payload.spool_id and not spool:
+    spool = SPOOLS.get(payload.spool_id)
+    if not spool:
         raise HTTPException(status_code=404, detail="Spool not found")
 
     for unit in AMS_UNITS:
         for slot in unit.slots:
             if slot.id == slot_id:
                 slot.spool_id = payload.spool_id
-                slot.spool = spool
-                slot.status = "loaded" if payload.spool_id else "empty"
-                if payload.spool_id and spool.status != "assigned":
+                slot.status = "loaded"
+                if spool.status != "assigned":
                     SPOOLS[payload.spool_id] = spool.copy(update={"status": "assigned"})
                 logger.info(
                     "Assignment",
@@ -311,6 +223,33 @@ async def update_ams_unit(unit_id: int, payload: AmsUnitUpdate) -> AmsUnit:
             unit.name = updates.get("name", unit.name)
             if "slots" in updates:
                 _resize_slots(unit, int(updates["slots"]))
+            logger.info("ams_unit_updated", extra={"unit_id": unit_id, **updates})
+            return unit
+    raise HTTPException(status_code=404, detail="AMS unit not found")
+
+
+@app.post("/ams", response_model=AmsUnit, status_code=201)
+async def create_ams_unit(payload: AmsUnitCreate) -> AmsUnit:
+    unit_id = _next_unit_id()
+    next_slot_id = _next_slot_id()
+    slots = [
+        Slot(id=next_slot_id + index, slot_number=index + 1, status="empty")
+        for index in range(payload.slots)
+    ]
+    unit = AmsUnit(id=unit_id, name=payload.name, slots=slots)
+    AMS_UNITS.append(unit)
+    logger.info("ams_unit_created", extra={"unit_id": unit_id, "slots": payload.slots})
+    return unit
+
+
+@app.patch("/ams/{unit_id}", response_model=AmsUnit)
+async def update_ams_unit(unit_id: int, payload: AmsUnitUpdate) -> AmsUnit:
+    for unit in AMS_UNITS:
+        if unit.id == unit_id:
+            updates = payload.dict(exclude_unset=True)
+            if not updates:
+                raise HTTPException(status_code=400, detail="No updates provided")
+            unit.name = updates.get("name", unit.name)
             logger.info("ams_unit_updated", extra={"unit_id": unit_id, **updates})
             return unit
     raise HTTPException(status_code=404, detail="AMS unit not found")
