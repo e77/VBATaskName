@@ -103,8 +103,10 @@ class SpoolManagerAPI:
     def health_check(self) -> Any:
         return self._request("GET", "/health")
 
-    def list_ams_units(self) -> List[Dict[str, Any]]:
-        return self._cached_request("ams_units", "GET", "/ams")
+    def list_ams_units(self, include_library: bool = True) -> List[Dict[str, Any]]:
+        params = {"include_library": str(include_library).lower()}
+        cache_key = "ams_units_with_library" if include_library else "ams_units"
+        return self._cached_request(cache_key, "GET", "/ams", params=params)
 
     def list_slots_for_unit(self, unit_id: int) -> List[Dict[str, Any]]:
         return self._cached_request(f"ams_slots_{unit_id}", "GET", f"/ams/{unit_id}/slots")
@@ -113,6 +115,9 @@ class SpoolManagerAPI:
         params = {"status": status} if status else None
         cache_key = "spools_all" if not status else f"spools_{status}"
         return self._cached_request("inventory:" + cache_key, "GET", "/spools", params=params)
+
+    def get_library(self) -> Dict[str, Any]:
+        return self._cached_request("library", "GET", "/library")
 
     def lookup_spool(self, identifier: str, mode: str = "id") -> Dict[str, Any]:
         if mode == "qr":
