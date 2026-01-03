@@ -40,7 +40,7 @@
       }
       main {
         padding: 1.5rem;
-        max-width: 1200px;
+        max-width: 1400px;
         margin: 0 auto;
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -140,6 +140,38 @@
         border-radius: 10px;
         background: #0c1524;
       }
+      .ams-columns {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 1fr);
+        align-items: start;
+      }
+      .ascii-panel {
+        background: linear-gradient(135deg, #0a2a63, #0b1f4b);
+        border: 1px solid #1e3a8a;
+        border-radius: 12px;
+        padding: 0.75rem;
+        color: #dce9ff;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 40px rgba(3, 7, 18, 0.55);
+      }
+      .ascii-panel h3 {
+        margin: 0 0 0.5rem;
+        font-size: 1rem;
+        font-family: "Cascadia Code", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+      .ascii-panel pre {
+        margin: 0;
+        font-family: "Cascadia Code", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        background: #0b2f6b;
+        border: 1px solid #1e3a8a;
+        border-radius: 10px;
+        padding: 0.75rem;
+        color: #e4edff;
+        font-size: 13px;
+        line-height: 1.35;
+        overflow-x: auto;
+        white-space: pre;
+      }
       .muted {
         color: var(--muted);
         font-size: 0.9rem;
@@ -233,18 +265,27 @@
 
       <section class="panel">
         <h2>AMS units</h2>
-        <form id="ams-form">
+        <div class="ams-columns">
           <div>
-            <label for="ams-name">Unit name</label>
-            <input id="ams-name" name="name" required placeholder="AMS-02" />
+            <form id="ams-form">
+              <div>
+                <label for="ams-name">Unit name</label>
+                <input id="ams-name" name="name" required placeholder="AMS-02" />
+              </div>
+              <div>
+                <label for="ams-slots">Number of slots</label>
+                <input id="ams-slots" name="slots" type="number" min="1" max="16" value="4" />
+              </div>
+              <button type="submit">Add AMS unit</button>
+            </form>
+            <div id="ams-list" class="slots" aria-live="polite" style="margin-top: 1rem"></div>
           </div>
-          <div>
-            <label for="ams-slots">Number of slots</label>
-            <input id="ams-slots" name="slots" type="number" min="1" max="16" value="4" />
+          <div class="ascii-panel">
+            <h3>AMS &amp; Library view</h3>
+            <div class="muted" style="margin-bottom: 0.5rem">Visual snapshot of every unit and shelf.</div>
+            <pre id="ams-visual" aria-live="polite">Loading…</pre>
           </div>
-          <button type="submit">Add AMS unit</button>
-        </form>
-        <div id="ams-list" class="slots" aria-live="polite" style="margin-top: 1rem"></div>
+        </div>
       </section>
 
       <section class="panel" style="grid-column: 1 / -1">
@@ -370,25 +411,113 @@
         `;
       }
 
+      function renderReadOnlySlot(slot) {
+        const labelParts = [slot.spool?.material, slot.spool?.color].filter(Boolean);
+        const label = labelParts.join(" ") || slot.spool?.description || "Library item";
+        const typeLabel = slot.spool?.spool_type === "bulk" ? "Bulk" : "Spool";
+        const remaining = slot.spool?.remaining_g != null ? `${slot.spool.remaining_g}g` : "";
+        const statusText = slot.spool?.status || slot.status || "available";
+        return `
+          <div class="slot">
+            <div class="status-line">
+              <strong>Slot ${slot.slot_number}</strong>
+              <div>${statusPill(statusText)}</div>
+            </div>
+            <div class="muted">${typeLabel}</div>
+            <div style="margin-top:0.35rem">${label}</div>
+            <div class="muted">${[remaining, slot.spool?.id || ""].filter(Boolean).join(" • ")}</div>
+          </div>
+        `;
+      }
+
+      function padCell(text, width) {
+        if (!text) return " ".repeat(width);
+        const cleaned = String(text);
+        if (cleaned.length > width) return cleaned.slice(0, width - 1) + "…";
+        return cleaned.padEnd(width, " ");
+      }
+
+      function renderAsciiUnit(unit) {
+        const slotsPerRow = Math.max(1, Math.min(4, unit.slots.length || 1));
+        const cellWidth = 20;
+        const inner = cellWidth - 2;
+        const chunks = [];
+        for (let i = 0; i < unit.slots.length; i += slotsPerRow) {
+          chunks.push(unit.slots.slice(i, i + slotsPerRow));
+        }
+
+        const lines = [];
+        lines.push(`+${"=".repeat(unit.name.length + 6)}+`);
+        lines.push(`|  ${unit.name}  |`);
+        lines.push(`+${"=".repeat(unit.name.length + 6)}+`);
+        if (unit.slots.length === 0) {
+          lines.push("(no slots)");
+        }
+
+        const top = "+" + "-".repeat(inner) + "+";
+        chunks.forEach((chunk) => {
+          const blockLines = [[], [], [], [], []];
+          chunk.forEach((slot) => {
+            const spool = slot.spool || {};
+            const titleBase = spool.spool_type === "bulk" ? "Bulk" : spool.spool_type === "spool" ? "Spool" : slot.status || "Slot";
+            const title = padCell(`S${slot.slot_number} ${titleBase}`, inner);
+            const material = padCell([spool.material, spool.color].filter(Boolean).join(" ") || spool.description || "—", inner);
+            const remaining = padCell(
+              [
+                spool.remaining_g != null ? `${spool.remaining_g}g` : "",
+                spool.status || slot.status || "",
+              ]
+                .filter(Boolean)
+                .join(" "),
+              inner
+            );
+
+            blockLines[0].push(top);
+            blockLines[1].push(`|${title}|`);
+            blockLines[2].push(`|${material}|`);
+            blockLines[3].push(`|${remaining}|`);
+            blockLines[4].push(top);
+          });
+          blockLines.forEach((row) => lines.push(row.join(" ")));
+        });
+
+        return lines.join("\n");
+      }
+
+      function renderAscii(units) {
+        const visual = document.getElementById("ams-visual");
+        if (!units.length) {
+          visual.textContent = "No AMS units yet";
+          return;
+        }
+        visual.textContent = units.map((u) => renderAsciiUnit(u)).join("\n\n");
+      }
+
       async function loadAms() {
         const list = document.getElementById("ams-list");
         list.innerHTML = "<div class='muted'>Loading AMS units…</div>";
         try {
           const [units, spools] = await Promise.all([api("/ams"), api("/spools")]);
           list.innerHTML = "";
+          renderAscii(units);
+
           units.forEach((unit) => {
             const wrapper = document.createElement("div");
             wrapper.className = "slot";
+            const isLibrary = unit.id === 0;
+            const slotMarkup = unit.slots
+              .map((slot) => (isLibrary ? renderReadOnlySlot(slot) : renderSlot(slot, spools)))
+              .join("");
             wrapper.innerHTML = `
               <div class="status-line">
                 <div>
                   <strong>${unit.name}</strong>
                   <div class="muted">ID: ${unit.id}</div>
                 </div>
-                <button class="rename" data-unit="${unit.id}" style="width:auto">Rename</button>
+                ${isLibrary ? "" : `<button class="rename" data-unit="${unit.id}" style="width:auto">Rename</button>`}
               </div>
               <div class="slots" style="margin-top:0.75rem">
-                ${unit.slots.map((slot) => renderSlot(slot, spools)).join("")}
+                ${slotMarkup}
               </div>
             `;
             list.appendChild(wrapper);
@@ -426,6 +555,7 @@
           });
         } catch (error) {
           list.innerHTML = `<div class='muted'>${error.message}</div>`;
+          document.getElementById("ams-visual").textContent = error.message;
         }
       }
 
