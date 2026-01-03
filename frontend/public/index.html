@@ -677,6 +677,15 @@
         return cleaned.padEnd(width, " ");
       }
 
+      function centerText(text, width) {
+        const cleaned = String(text);
+        if (cleaned.length >= width) return cleaned.slice(0, width);
+        const gap = width - cleaned.length;
+        const left = Math.floor(gap / 2);
+        const right = gap - left;
+        return `${" ".repeat(left)}${cleaned}${" ".repeat(right)}`;
+      }
+
       function sanitizeColor(value) {
         if (!value) return "";
         return String(value).replace(/[^#a-zA-Z0-9(),.\s-]/g, "");
@@ -686,15 +695,17 @@
         const slotsPerRow = Math.max(1, Math.min(4, unit.slots.length || 1));
         const cellWidth = 20;
         const inner = cellWidth - 2;
+        const chunkWidth = cellWidth * slotsPerRow + (slotsPerRow - 1);
+        const headerInner = Math.max(chunkWidth - 2, unit.name.length + 4);
         const chunks = [];
         for (let i = 0; i < unit.slots.length; i += slotsPerRow) {
           chunks.push(unit.slots.slice(i, i + slotsPerRow));
         }
 
         const lines = [];
-        lines.push(`+${"=".repeat(unit.name.length + 6)}+`);
-        lines.push(`|  ${unit.name}  |`);
-        lines.push(`+${"=".repeat(unit.name.length + 6)}+`);
+        lines.push(`+${"=".repeat(headerInner)}+`);
+        lines.push(`|${centerText(unit.name, headerInner)}|`);
+        lines.push(`+${"=".repeat(headerInner)}+`);
         if (unit.slots.length === 0) {
           lines.push("(no slots)");
         }
