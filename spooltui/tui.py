@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 import textwrap
-from typing import Dict, List
+from typing import Callable, Dict, List, Optional
 
 from blessed import Terminal
 
@@ -336,24 +336,38 @@ def _tracked_dirty(repo_root: str) -> bool:
     return out.strip() != ""
 
 
-def _remote_master_update(repo_root: str, remote: str, branch: str) -> List[str]:
+def _remote_master_update(
+    repo_root: str, remote: str, branch: str, progress: Optional[Callable[[str], None]] = None
+) -> List[str]:
     """
     Remote is the master: force local checkout to match remote/branch, then restart containers.
     Keeps local runtime/config files by excluding them from git clean.
+
+    A ``progress`` callback can be provided to surface incremental updates while commands run,
+    so the TUI doesn't appear to hang on long operations (e.g., docker builds).
     """
     logs: List[str] = []
 
+    def emit(line: str) -> None:
+        if progress:
+            progress(line)
+        logs.append(line)
+
     def run_or_raise(cmd: List[str]) -> None:
+        emit(f"$ {' '.join(cmd)}")
         code, out = _run(cmd, cwd=repo_root)
-        logs.append(f"$ {' '.join(cmd)}")
         if out:
-            logs.append(out)
+            for segment in out.splitlines():
+                emit(segment)
         if code != 0:
+            emit(f"Command failed ({code})")
             raise UpdateError(f"Command failed ({code}): {' '.join(cmd)}\n{out}")
 
+    emit("Starting update...")
     run_or_raise(["git", "fetch", remote])
     run_or_raise(["git", "reset", "--hard", f"{remote}/{branch}"])
 
+    emit("Cleaning untracked files (preserving runtime/config)")
     # Clean untracked, but KEEP your runtime/config stuff.
     run_or_raise(
         [
@@ -371,7 +385,9 @@ def _remote_master_update(repo_root: str, remote: str, branch: str) -> List[str]
         ]
     )
 
+    emit("Rebuilding containers via docker compose...")
     run_or_raise(["docker", "compose", "up", "-d", "--build"])
+    emit("Update finished.")
     return logs
 
 
@@ -419,7 +435,13 @@ def check_for_updates(term: Terminal) -> None:
                 return
             if key_str == "u":
                 try:
-                    logs = _remote_master_update(status.repo_root, status.remote, status.branch)
+                    print(term.clear + term.bold("Running update..."))
+                    logs = _remote_master_update(
+                        status.repo_root,
+                        status.remote,
+                        status.branch,
+                        progress=lambda line: print(line, flush=True),
+                    )
                     refreshed_status = check_updates()
                 except UpdateError as exc:  # pragma: no cover - environment dependent
                     display_error(term, exc)
