@@ -67,7 +67,7 @@ def color_block(term: Terminal, color: str | None) -> str:
 
 def prompt_input(term: Terminal, label: str) -> str:
     print(term.clear + term.bold(label))
-    print(term.dim("Press Enter when done. ESC cancels."))
+    print(faint("Press Enter when done. ESC cancels."))
     buf: List[str] = []
     with term.cbreak():
         while True:
@@ -87,12 +87,19 @@ def prompt_input(term: Terminal, label: str) -> str:
             buf.append(str(key))
             print(key, end="", flush=True)
 
+def faint(s: str) -> str:
+    try:
+        return faint(s)
+    except Exception:
+        return s
+
 
 def render_menu(term: Terminal) -> None:
     print(term.clear + term.bold_underline("Spool Manager Terminal"))
     print(term.bold("Dungeon Trail"))
     for line in DUNGEON_FLAVOR:
-        print(term.dim("  " + line))
+        print(faint("  " + line))
+
     print()
     print(term.bold("Choose your path (press key):"))
     print("  1) AMS status overview")
@@ -100,10 +107,7 @@ def render_menu(term: Terminal) -> None:
     print("  3) Spool lookup (ID / QR / RFID)")
     print("  4) Assign slot")
     print("  5) Mark spool opened / back to stock")
-    print("  6) Adjust remaining (±10g with arrows)")
-    print("  7) Delete spool / clear demo data")
-    print("  8) Edit AMS slot count")
-    print("  9) Check for updates / redeploy")
+    print("  6) Check for updates / redeploy")
     print("  q) Quit")
 
 
@@ -111,7 +115,7 @@ def _print_lines(term: Terminal, title: str, lines: List[str]) -> None:
     print(term.clear + term.bold(title))
     for line in lines:
         print(line)
-    print(term.dim("Press b to go back."))
+    print(faint("Press b to go back."))
 
 
 def display_error(term: Terminal, error: Exception) -> None:
@@ -154,8 +158,7 @@ def view_ams_status(term: Terminal, client: SpoolManagerAPI) -> None:
                 desc = spool
             patch = color_block(term, color)
             remaining_text = f" | {remaining}g" if remaining is not None else ""
-            slot_label = f"  Slot {slot_no} (id {slot_id}):"
-            lines.append(f"{slot_label} {status} {patch} {desc}{remaining_text}")
+            lines.append(f"  Slot {slot_no}: {status} {patch} {desc}{remaining_text}")
         lines.append("")
     _print_lines(term, "AMS Status", lines)
     wait_for_back(term)
@@ -292,93 +295,6 @@ def mark_status(term: Terminal, client: SpoolManagerAPI) -> None:
     wait_for_back(term)
 
 
-def adjust_remaining(term: Terminal, client: SpoolManagerAPI) -> None:
-    spool_id = prompt_input(term, "Enter spool ID to adjust: ")
-    if not spool_id:
-        return
-    try:
-        spool = client.lookup_spool(spool_id)
-    except Exception as exc:  # pragma: no cover
-        display_error(term, exc)
-        wait_for_back(term)
-        return
-
-    current = spool.get("remaining_g") or 0
-    value = current
-    print(term.clear + term.bold(f"Adjust remaining for {spool_id}"))
-    print(term.dim("Use UP/DOWN arrows for ±10g, Enter to save, ESC to cancel."))
-    while True:
-        print(term.move_x(0) + f"Remaining: {value} g    ", end="", flush=True)
-        with term.cbreak():
-            key = term.inkey()
-        if key.name == "KEY_ESCAPE":
-            return
-        if key.name == "KEY_UP":
-            value += 10
-            continue
-        if key.name == "KEY_DOWN":
-            value = max(0, value - 10)
-            continue
-        if key.name == "KEY_ENTER":
-            try:
-                client.update_spool(spool_id, {"remaining_g": value})
-                logger.info("remaining_updated", extra={"spool_id": spool_id, "remaining_g": value})
-            except Exception as exc:  # pragma: no cover
-                display_error(term, exc)
-                wait_for_back(term)
-                return
-            _print_lines(term, "Remaining updated", [f"{spool_id} now has {value} g remaining."])
-            wait_for_back(term)
-            return
-
-
-def delete_spool(term: Terminal, client: SpoolManagerAPI) -> None:
-    spool_id = prompt_input(term, "Enter spool ID to delete: ")
-    if not spool_id:
-        return
-    print(term.clear + term.bold(f"Delete {spool_id}?"))
-    print(term.red("This will remove it from any AMS slot."))
-    print("Press y to confirm, anything else to cancel.")
-    with term.cbreak():
-        key = term.inkey()
-    if str(key).lower() != "y":
-        return
-    try:
-        client.delete_spool(spool_id)
-        logger.info("spool_deleted", extra={"spool_id": spool_id})
-    except Exception as exc:  # pragma: no cover
-        display_error(term, exc)
-        wait_for_back(term)
-        return
-    _print_lines(term, "Spool deleted", [f"{spool_id} removed and any slots cleared."])
-    wait_for_back(term)
-
-
-def edit_ams_slots(term: Terminal, client: SpoolManagerAPI) -> None:
-    unit_id_input = prompt_input(term, "Enter AMS unit ID to resize: ")
-    if not unit_id_input:
-        return
-    slots_input = prompt_input(term, "How many slots should it have (1-16)? ")
-    if not slots_input:
-        return
-    try:
-        unit_id = int(unit_id_input)
-        slots = int(slots_input)
-    except ValueError:
-        display_error(term, ValueError("Please enter numeric values."))
-        wait_for_back(term)
-        return
-    try:
-        client.update_ams_unit(unit_id, {"slots": slots})
-        logger.info("ams_resized", extra={"unit_id": unit_id, "slots": slots})
-    except Exception as exc:  # pragma: no cover
-        display_error(term, exc)
-        wait_for_back(term)
-        return
-    _print_lines(term, "AMS updated", [f"Unit {unit_id} now has {slots} slots."])
-    wait_for_back(term)
-
-
 def check_for_updates(term: Terminal) -> None:
     try:
         status = check_updates()
@@ -404,7 +320,7 @@ def check_for_updates(term: Terminal) -> None:
 
     if status.behind == 0:
         print(term.green("Already up to date."))
-        print(term.dim("Press b to go back."))
+        print(faint("Press b to go back."))
         wait_for_back(term)
         return
 
@@ -464,7 +380,7 @@ def main(argv: List[str] | None = None) -> int:
         logger.info("health_ok", extra={"base_url": client.base_url})
     except Exception as exc:  # pragma: no cover
         logger.warning("health_failed", extra={"base_url": client.base_url, "error": str(exc)})
-        print(term.dim(f"Warning: API health check failed at {client.base_url}: {exc}"))
+        print(faint(f"Warning: API health check failed at {client.base_url}: {exc}"))
 
     with term.fullscreen(), term.hidden_cursor():
         while True:
@@ -487,12 +403,6 @@ def main(argv: List[str] | None = None) -> int:
             elif key_str == "5":
                 mark_status(term, client)
             elif key_str == "6":
-                adjust_remaining(term, client)
-            elif key_str == "7":
-                delete_spool(term, client)
-            elif key_str == "8":
-                edit_ams_slots(term, client)
-            elif key_str == "9":
                 check_for_updates(term)
     print(term.clear + term.bold("Farewell, adventurer."))
     return 0
@@ -500,3 +410,4 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
+
