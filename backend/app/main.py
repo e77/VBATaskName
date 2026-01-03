@@ -192,7 +192,6 @@ SPOOLS: Dict[str, Spool] = {
         material="PLA",
         color="Silver",
         remaining_g=780,
-        spool_type="spool",
     ),
     "demo-2": Spool(
         id="demo-2",
@@ -201,7 +200,6 @@ SPOOLS: Dict[str, Spool] = {
         material="PETG",
         color="Black",
         remaining_g=450,
-        spool_type="spool",
     ),
 }
 

@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 import textwrap
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from blessed import Terminal
 
@@ -388,7 +388,7 @@ def _choose_unit(term: Terminal, units: List[Dict[str, Any]]) -> int | None:
 
 def configure_ams_slots(term: Terminal, client: SpoolManagerAPI) -> None:
     try:
-        units = client.list_ams_units(include_library=False)
+        units = client.list_ams_units()
     except Exception as exc:  # pragma: no cover - runtime feedback only
         display_error(term, exc)
         wait_for_back(term)
