@@ -298,7 +298,7 @@ def view_spool_lookup(term: Terminal, client: SpoolManagerAPI) -> None:
 
 def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
     try:
-        units = client.list_ams_units()
+        units = client.list_ams_units(include_library=False)
     except Exception as exc:  # pragma: no cover - runtime feedback only
         display_error(term, exc)
         wait_for_back(term)
@@ -307,6 +307,8 @@ def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
     print(term.clear + term.bold("Available slots (enter slot ID):"))
     for unit in units:
         unit_id = unit.get("id")
+        if unit_id == 0:
+            continue
         name = unit.get("name", "")
         print(term.bold(f"[{unit_id}] {name}"))
         for slot in unit.get("slots", []):

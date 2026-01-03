@@ -73,6 +73,9 @@ app.openapi = custom_openapi  # type: ignore[assignment]
 ALLOWED_STATUSES = {"in_stock", "opened", "assigned", "retired"}
 
 
+ALLOWED_FILAMENT_TYPES = {"spool", "bulk"}
+
+
 class Spool(BaseModel):
     id: str
     description: str
@@ -80,6 +83,41 @@ class Spool(BaseModel):
     material: str | None = None
     color: str | None = None
     remaining_g: int | None = None
+    spool_type: str = Field(default="spool")
+
+    @validator("spool_type")
+    def validate_spool_type(cls, value: str) -> str:  # noqa: D417 - pydantic signature
+        if value not in ALLOWED_FILAMENT_TYPES:
+            raise ValueError(f"spool_type must be one of {sorted(ALLOWED_FILAMENT_TYPES)}")
+        return value
+
+
+class SpoolCreate(BaseModel):
+    id: str
+    description: str
+    status: str = Field("in_stock")
+    material: str | None = None
+    color: str | None = None
+    remaining_g: int | None = None
+    spool_type: str = Field(default="spool")
+
+    @validator("status")
+    def validate_status(cls, value: str) -> str:  # noqa: D417 - pydantic signature
+        if value not in ALLOWED_STATUSES:
+            raise ValueError(f"Status must be one of {sorted(ALLOWED_STATUSES)}")
+        return value
+
+    @validator("remaining_g")
+    def validate_remaining(cls, value: int | None) -> int | None:  # noqa: D417
+        if value is not None and value < 0:
+            raise ValueError("remaining_g must be non-negative")
+        return value
+
+    @validator("spool_type")
+    def validate_spool_type(cls, value: str) -> str:  # noqa: D417 - pydantic signature
+        if value not in ALLOWED_FILAMENT_TYPES:
+            raise ValueError(f"spool_type must be one of {sorted(ALLOWED_FILAMENT_TYPES)}")
+        return value
 
 
 class SpoolCreate(BaseModel):
@@ -127,6 +165,15 @@ class AmsUnit(BaseModel):
     slots: List[Slot] = Field(default_factory=list)
 
 
+class BulkFilament(BaseModel):
+    id: str
+    description: str
+    material: str | None = None
+    color: str | None = None
+    weight_g: int | None = None
+    stage: str = Field(default="delivered")
+
+
 class AmsUnitCreate(BaseModel):
     name: str
     slots: int = Field(default=4, ge=1, le=16)
@@ -168,6 +215,33 @@ AMS_UNITS: List[AmsUnit] = [
         ],
     ),
 ]
+
+LIBRARY_BULK: List[BulkFilament] = [
+    BulkFilament(
+        id="bulk-pla-natural",
+        description="Natural PLA 2kg box",
+        material="PLA",
+        color="Natural",
+        weight_g=2000,
+        stage="delivered",
+    ),
+    BulkFilament(
+        id="bulk-abs-black",
+        description="ABS pellets",
+        material="ABS",
+        color="Black",
+        weight_g=1500,
+        stage="delivered",
+    ),
+]
+
+
+def _hydrate_slot(slot: Slot) -> Slot:
+    if slot.spool_id:
+        spool = SPOOLS.get(slot.spool_id)
+        if spool:
+            return slot.copy(update={"spool": spool})
+    return slot
 
 
 def _hydrate_slot(slot: Slot) -> Slot:
@@ -329,14 +403,25 @@ async def assign_slot(slot_id: int, payload: AssignPayload) -> Dict[str, Any]:
 
 
 @app.get("/ams", response_model=List[AmsUnit])
-async def list_ams_units() -> List[AmsUnit]:
+async def list_ams_units(include_library: bool = True) -> List[AmsUnit]:
+    hydrated_units: List[AmsUnit] = []
+
     for unit in AMS_UNITS:
-        unit.slots = [_hydrate_slot(slot) for slot in unit.slots]
-    return AMS_UNITS
+        hydrated_units.append(
+            unit.copy(update={"slots": [_hydrate_slot(slot) for slot in unit.slots]})
+        )
+
+    if include_library:
+        hydrated_units.append(_library_unit())
+
+    return hydrated_units
 
 
 @app.get("/ams/{unit_id}/slots", response_model=List[Slot])
 async def list_slots(unit_id: int) -> List[Slot]:
+    if unit_id == 0:
+        return [_hydrate_slot(slot) for slot in _library_slots()]
+
     for unit in AMS_UNITS:
         if unit.id == unit_id:
             return [_hydrate_slot(slot) for slot in unit.slots]

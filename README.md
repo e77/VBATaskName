@@ -10,6 +10,7 @@ A keyboard-first terminal interface built with [Blessed](https://pypi.org/projec
 - **Self-update on Pi**: check for updates and redeploy the Compose stack without losing data.
 - **Keyboard shortcuts**: numbered menu with `b`/`ESC` to back out, `q` to quit.
 - **Dungeon flavor**: lightweight ASCII narration during navigation.
+- **Library shelf**: browse bulk filament alongside unassigned spools in a pseudo-AMS "Library" so you can track stock before it is loaded.
 
 ## Quickstart
 1. Get the code onto your machine:
