@@ -42,6 +42,65 @@ COLOR_MAP: Dict[str, str] = {
 }
 
 
+def _get_network_details() -> List[tuple[str, str, str]]:
+    """Return list of (interface, ip, mac) for active links.
+
+    Uses the ``ip`` command to avoid new runtime dependencies. If anything fails,
+    returns an empty list.
+    """
+
+    try:
+        proc = subprocess.run(
+            ["ip", "-o", "addr", "show", "up"], capture_output=True, text=True
+        )
+    except Exception:
+        return []
+
+    if proc.returncode != 0 or not proc.stdout:
+        return []
+
+    iface_map: Dict[str, Dict[str, Any]] = {}
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+
+        iface = parts[1]
+        if iface.endswith(":"):
+            iface = iface[:-1]
+
+        if parts[2] == "link/ether" and len(parts) >= 4:
+            iface_map.setdefault(iface, {}).update({"mac": parts[3]})
+        if parts[2] == "inet" and len(parts) >= 4:
+            addr = parts[3].split("/")[0]
+            iface_map.setdefault(iface, {}).setdefault("ips", []).append(addr)
+
+    results: List[tuple[str, str, str]] = []
+    for iface, data in iface_map.items():
+        ips = data.get("ips") or []
+        mac = data.get("mac")
+        if not ips and not mac:
+            continue
+        ip_display = ", ".join(ips) if ips else "n/a"
+        results.append((iface, ip_display, mac or "n/a"))
+
+    return results
+
+
+def network_summary(term: Terminal) -> List[str]:
+    icon = "🖧"
+    details = _get_network_details()
+    if not details:
+        return [faint(f"{icon} Network: n/a")]
+
+    lines = []
+    for iface, ip, mac in details:
+        lines.append(
+            f"{icon} {term.bold(iface)} IP {ip}  MAC {mac}"
+        )
+    return lines
+
+
 def wrap(text: str, width: int) -> List[str]:
     return textwrap.wrap(text, width=width) if text else [""]
 
@@ -167,7 +226,9 @@ def faint(s: str) -> str:
 
 def render_menu(term: Terminal) -> None:
     print(term.clear + term.bold_underline("Spool Manager Terminal"))
-    print(term.bold("AMS Config"))
+    for line in network_summary(term):
+        print(line)
+    print(term.bold("Dungeon Trail"))
     for line in DUNGEON_FLAVOR:
         print(faint(" " + line))
     print()
