@@ -20,9 +20,9 @@ logging.basicConfig(
 logger = logging.getLogger("spooltui")
 
 DUNGEON_FLAVOR = [
-    "You step into the Filament Keep—rows of reels echo like stalactites.",
-    "Faint whirs of AMS sentinels guard the treasure slots ahead.",
-    "Crates of color and material line the hall; choose your next action wisely.",
+    "Configure AMS units, then create spools and assign to AMS slots.",
+    "Unloaded spools can be assigned to the library.",
+    "Spare spools can be loaded with unusued bulk filament.",
 ]
 
 COLOR_MAP: Dict[str, str] = {
@@ -161,7 +161,7 @@ def faint(s: str) -> str:
 
 def render_menu(term: Terminal) -> None:
     print(term.clear + term.bold_underline("Spool Manager Terminal"))
-    print(term.bold("Dungeon Trail"))
+    print(term.bold("AMS Config"))
     for line in DUNGEON_FLAVOR:
         print(faint(" " + line))
     print()
