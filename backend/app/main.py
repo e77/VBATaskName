@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, Field, validator
 
 def configure_logging() -> logging.Logger:
@@ -31,6 +32,42 @@ def configure_logging() -> logging.Logger:
 logger = configure_logging()
 
 app = FastAPI(title="Spool Manager API", version="0.1.0")
+
+
+def generate_openapi_schema() -> Dict[str, Any]:
+    """Build and cache the OpenAPI schema with detailed logging.
+
+    FastAPI will call ``app.openapi`` for ``/openapi.json``. When schema generation
+    fails, the endpoint returns a 500 without much context. We log the failure so
+    operators can see the stack trace in container logs. The schema is cached once
+    so subsequent requests can't regress into errors if data mutates at runtime.
+    """
+
+    if getattr(app, "openapi_schema", None):
+        return app.openapi_schema
+
+    try:
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            routes=app.routes,
+        )
+        logger.debug(
+            "openapi_schema_built",
+            extra={"paths": len(schema.get("paths", {}))},
+        )
+        app.openapi_schema = schema
+        return schema
+    except Exception:
+        logger.exception("openapi_schema_generation_failed")
+        raise
+
+
+def custom_openapi() -> Dict[str, Any]:  # pragma: no cover - runtime wiring
+    return generate_openapi_schema()
+
+
+app.openapi = custom_openapi  # type: ignore[assignment]
 
 
 ALLOWED_STATUSES = {"in_stock", "opened", "assigned", "retired"}
