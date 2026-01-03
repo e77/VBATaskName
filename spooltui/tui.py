@@ -144,6 +144,7 @@ def view_ams_status(term: Terminal, client: SpoolManagerAPI) -> None:
         lines.append(term.bold(f"[{unit_id}] {name} (slots: {len(slots)})"))
         for slot in slots:
             slot_no = slot.get("slot_number")
+            slot_id = slot.get("id")
             status = slot.get("status", "?")
             spool = slot.get("spool") or slot.get("spool_id")
             color = None
@@ -229,6 +230,30 @@ def view_spool_lookup(term: Terminal, client: SpoolManagerAPI) -> None:
 
 
 def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
+    try:
+        units = client.list_ams_units()
+    except Exception as exc:  # pragma: no cover - runtime feedback only
+        display_error(term, exc)
+        wait_for_back(term)
+        return
+
+    print(term.clear + term.bold("Available slots (enter slot ID):"))
+    for unit in units:
+        unit_id = unit.get("id")
+        name = unit.get("name", "<unnamed>")
+        print(term.bold(f"[{unit_id}] {name}"))
+        for slot in unit.get("slots", []):
+            slot_no = slot.get("slot_number")
+            slot_id = slot.get("id")
+            spool = slot.get("spool") or slot.get("spool_id")
+            spool_display = "<empty>"
+            if isinstance(spool, dict):
+                spool_display = spool.get("description", spool.get("id", "<unknown>"))
+            elif isinstance(spool, str):
+                spool_display = spool
+            print(f"  Slot {slot_no} -> id {slot_id} ({spool_display})")
+        print()
+
     slot_id = prompt_input(term, "Enter slot ID to assign: ")
     if not slot_id:
         return
