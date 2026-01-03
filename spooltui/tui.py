@@ -148,6 +148,7 @@ def view_ams_status(term: Terminal, client: SpoolManagerAPI) -> None:
         lines.append(term.bold(f"[{unit_id}] {name} (slots: {len(slots)})"))
         for slot in slots:
             slot_no = slot.get("slot_number")
+            slot_id = slot.get("id")
             status = slot.get("status", "?")
             spool = slot.get("spool") or slot.get("spool_id")
 
