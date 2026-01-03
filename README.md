@@ -81,6 +81,7 @@ Flags can override environment variables:
 - `4` – Assign slot
 - `5` – Mark spool opened / back to stock
 - `6` – Check for updates / redeploy containers
+- `a` – Admin / configuration (AMS slot counts)
 - `b` or `ESC` – back from subview
 - `q` – quit the app
 
@@ -103,6 +104,14 @@ if status.behind:
     apply_updates(status)
 PY
 ```
+
+## Debugging and logs
+- **Backend logs:** When running the Docker stack, stream API logs with `docker compose logs -f backend`. The middleware records each request with method, path, and duration, plus stack traces on failures.
+- **Enable debug verbosity:** Set `SPOOL_API_LOG_LEVEL=DEBUG` (environment variable) before launching the backend container or invoking `python backend/app/main.py`. This increases detail around schema generation and request handling, which is helpful for diagnosing issues such as `/openapi.json` errors.
+- **Check OpenAPI availability:** From the host, verify the schema endpoint to confirm the API is healthy and to surface any logging about schema generation:
+  ```bash
+  curl -v http://localhost:8000/openapi.json | head
+  ```
 
 ## Notes
 - API errors are surfaced inline so operators can spot connectivity/auth issues quickly.
