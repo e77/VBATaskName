@@ -10,6 +10,7 @@ A keyboard-first terminal interface built with [Blessed](https://pypi.org/projec
 - **Self-update on Pi**: check for updates and redeploy the Compose stack without losing data.
 - **Keyboard shortcuts**: numbered menu with `b`/`ESC` to back out, `q` to quit.
 - **Dungeon flavor**: lightweight ASCII narration during navigation.
+- **Library shelf**: browse bulk filament alongside unassigned spools in a pseudo-AMS "Library" so you can track stock before it is loaded.
 
 ## Quickstart
 1. Get the code onto your machine:
@@ -81,6 +82,7 @@ Flags can override environment variables:
 - `4` – Assign slot
 - `5` – Mark spool opened / back to stock
 - `6` – Check for updates / redeploy containers
+- `a` – Admin / configuration (AMS slot counts)
 - `b` or `ESC` – back from subview
 - `q` – quit the app
 
@@ -103,6 +105,19 @@ if status.behind:
     apply_updates(status)
 PY
 ```
+
+## Debugging and logs
+- **Backend logs:** When running the Docker stack, stream API logs with `docker compose logs -f backend`. The middleware records each request with method, path, and duration, plus stack traces on failures.
+- **Enable debug verbosity:** Set `SPOOL_API_LOG_LEVEL=DEBUG` (environment variable) before launching the backend container or invoking `python backend/app/main.py`. This increases detail around schema generation and request handling, which is helpful for diagnosing issues such as `/openapi.json` errors.
+- **Check OpenAPI availability:** From the host, verify the schema endpoint to confirm the API is healthy and to surface any logging about schema generation:
+  ```bash
+  curl -v http://localhost:8000/openapi.json | head
+  ```
+
+## Tracking bulk filament vs spools
+- The backend and TUI now expose a "Library" pseudo-AMS that lists bulk filament (pellets/boxes) and spools that are in stock but not loaded into an AMS slot. It renders in the AMS overview so operators can see what inventory is ready to be loaded.
+- Filament entries carry a `spool_type` flag (`spool` vs `bulk`) so you can tell whether an entry is a physical spool or loose/bulk stock. Bulk entries include their weight in grams.
+- Assigning a spool to a real AMS slot will automatically transition its status from `in_stock` to `assigned`, and it will disappear from the Library view on the next refresh.
 
 ## Notes
 - API errors are surfaced inline so operators can spot connectivity/auth issues quickly.
