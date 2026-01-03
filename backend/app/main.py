@@ -1,19 +1,79 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 from datetime import datetime
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, Field, validator
 
-logger = logging.getLogger("spoolmanager.api")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+def configure_logging() -> logging.Logger:
+    """Configure a module-level logger with optional level override.
+
+    A simple helper keeps logging consistent and allows operators to
+    increase verbosity (for example when diagnosing 500 errors such as
+    /openapi.json failures) by setting the ``SPOOL_API_LOG_LEVEL``
+    environment variable.
+    """
+
+    log_level = os.getenv("SPOOL_API_LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    )
+    logger_instance = logging.getLogger("spoolmanager.api")
+    logger_instance.debug("Logger configured", extra={"level": log_level})
+    return logger_instance
+
+
+logger = configure_logging()
 
 app = FastAPI(title="Spool Manager API", version="0.1.0")
 
 
+def generate_openapi_schema() -> Dict[str, Any]:
+    """Build and cache the OpenAPI schema with detailed logging.
+
+    FastAPI will call ``app.openapi`` for ``/openapi.json``. When schema generation
+    fails, the endpoint returns a 500 without much context. We log the failure so
+    operators can see the stack trace in container logs. The schema is cached once
+    so subsequent requests can't regress into errors if data mutates at runtime.
+    """
+
+    if getattr(app, "openapi_schema", None):
+        return app.openapi_schema
+
+    try:
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            routes=app.routes,
+        )
+        logger.debug(
+            "openapi_schema_built",
+            extra={"paths": len(schema.get("paths", {}))},
+        )
+        app.openapi_schema = schema
+        return schema
+    except Exception:
+        logger.exception("openapi_schema_generation_failed")
+        raise
+
+
+def custom_openapi() -> Dict[str, Any]:  # pragma: no cover - runtime wiring
+    return generate_openapi_schema()
+
+
+app.openapi = custom_openapi  # type: ignore[assignment]
+
+
 ALLOWED_STATUSES = {"in_stock", "opened", "assigned", "retired"}
+
+
+ALLOWED_FILAMENT_TYPES = {"spool", "bulk"}
 
 
 class Spool(BaseModel):
@@ -23,10 +83,55 @@ class Spool(BaseModel):
     material: str | None = None
     color: str | None = None
     remaining_g: int | None = None
+    spool_type: str = Field(default="spool")
+
+    @validator("spool_type", pre=True, always=True)
+    def validate_spool_type(cls, value: str | None) -> str:  # noqa: D417 - pydantic signature
+        if not value:
+            return "spool"
+        if value not in ALLOWED_FILAMENT_TYPES:
+            raise ValueError(f"spool_type must be one of {sorted(ALLOWED_FILAMENT_TYPES)}")
+        return value
+
+
+class SpoolCreate(BaseModel):
+    id: str
+    description: str
+    status: str = Field("in_stock")
+    material: str | None = None
+    color: str | None = None
+    remaining_g: int | None = None
+    spool_type: str = Field(default="spool")
+
+    @validator("status")
+    def validate_status(cls, value: str) -> str:  # noqa: D417 - pydantic signature
+        if value not in ALLOWED_STATUSES:
+            raise ValueError(f"Status must be one of {sorted(ALLOWED_STATUSES)}")
+        return value
+
+    @validator("remaining_g")
+    def validate_remaining(cls, value: int | None) -> int | None:  # noqa: D417
+        if value is not None and value < 0:
+            raise ValueError("remaining_g must be non-negative")
+        return value
+
+    @validator("spool_type", pre=True, always=True)
+    def validate_spool_type(cls, value: str | None) -> str:  # noqa: D417 - pydantic signature
+        if not value:
+            return "spool"
+        if value not in ALLOWED_FILAMENT_TYPES:
+            raise ValueError(f"spool_type must be one of {sorted(ALLOWED_FILAMENT_TYPES)}")
+        return value
 
 
 class SpoolStatusUpdate(BaseModel):
     status: str
+
+    @validator("status")
+    def validate_status(cls, value: str) -> str:  # noqa: D417 - pydantic signature
+        if value not in ALLOWED_STATUSES:
+            raise ValueError(f"Status must be one of {sorted(ALLOWED_STATUSES)}")
+        return value
 
 
 class Slot(BaseModel):
@@ -43,6 +148,24 @@ class AmsUnit(BaseModel):
     slots: List[Slot] = Field(default_factory=list)
 
 
+class BulkFilament(BaseModel):
+    id: str
+    description: str
+    material: str | None = None
+    color: str | None = None
+    weight_g: int | None = None
+    stage: str = Field(default="delivered")
+
+
+class BulkCreate(BaseModel):
+    id: str
+    description: str
+    material: str | None = None
+    color: str | None = None
+    weight_g: int | None = None
+    stage: str = Field(default="delivered")
+
+
 class AmsUnitCreate(BaseModel):
     name: str
     slots: int = Field(default=4, ge=1, le=16)
@@ -50,16 +173,18 @@ class AmsUnitCreate(BaseModel):
 
 class AmsUnitUpdate(BaseModel):
     name: str | None = None
+    slots: int | None = Field(default=None, ge=1, le=16)
 
 
 SPOOLS: Dict[str, Spool] = {
     "demo-1": Spool(
         id="demo-1",
         description="Sample PLA spool",
-        status="in_stock",
+        status="assigned",
         material="PLA",
         color="Silver",
         remaining_g=780,
+        spool_type="spool",
     ),
     "demo-2": Spool(
         id="demo-2",
@@ -68,6 +193,7 @@ SPOOLS: Dict[str, Spool] = {
         material="PETG",
         color="Black",
         remaining_g=450,
+        spool_type="spool",
     ),
 }
 
@@ -77,10 +203,82 @@ AMS_UNITS: List[AmsUnit] = [
         name="AMS-01",
         slots=[
             Slot(id=1, slot_number=1, status="loaded", spool_id="demo-1"),
-            Slot(id=2, slot_number=2, status="empty"),
+            Slot(id=2, slot_number=2, status="loaded", spool_id="demo-2"),
+            Slot(id=3, slot_number=3, status="empty"),
+            Slot(id=4, slot_number=4, status="empty"),
         ],
     ),
 ]
+
+LIBRARY_BULK: List[BulkFilament] = [
+    BulkFilament(
+        id="bulk-pla-natural",
+        description="Natural PLA 2kg box",
+        material="PLA",
+        color="Natural",
+        weight_g=2000,
+        stage="delivered",
+    ),
+    BulkFilament(
+        id="bulk-abs-black",
+        description="ABS pellets",
+        material="ABS",
+        color="Black",
+        weight_g=1500,
+        stage="delivered",
+    ),
+]
+
+
+def _hydrate_slot(slot: Slot) -> Slot:
+    if slot.spool_id:
+        spool = _get_spool(slot.spool_id)
+        if spool:
+            return slot.copy(update={"spool": spool})
+    return slot
+
+
+def _detach_spool(spool_id: str) -> None:
+    """Remove a spool reference from any AMS slot that currently uses it."""
+
+    for unit in AMS_UNITS:
+        for slot in unit.slots:
+            if slot.spool_id == spool_id:
+                slot.spool_id = None
+                slot.spool = None
+                slot.status = "empty"
+
+
+def _normalize_spool(raw: Spool | Dict[str, Any] | None) -> Spool | None:
+    """Coerce stored spool records into a valid ``Spool`` instance.
+
+    Older cache/database entries might be missing fields such as ``spool_type`` or
+    use now-invalid statuses. Rather than letting validation errors bubble up and
+    trigger 500 responses, we fill sensible defaults and drop only truly
+    malformed entries while logging the incident.
+    """
+
+    if raw is None:
+        return None
+
+    try:
+        data = raw.dict() if isinstance(raw, Spool) else dict(raw)
+        data.setdefault("spool_type", "spool")
+        if data.get("status") not in ALLOWED_STATUSES:
+            data["status"] = "in_stock"
+        return Spool(**data)
+    except Exception as exc:  # pragma: no cover - defensive path
+        logger.warning(
+            "spool_normalization_failed",
+            extra={"spool": getattr(raw, "id", None) or data.get("id"), "error": str(exc)},
+        )
+        return None
+
+
+def _get_spool(spool_id: str | None) -> Spool | None:
+    if not spool_id:
+        return None
+    return _normalize_spool(SPOOLS.get(spool_id))
 
 
 def _next_slot_id() -> int:
@@ -93,6 +291,107 @@ def _next_unit_id() -> int:
     return max(existing_ids, default=0) + 1
 
 
+def _library_slots() -> List[Slot]:
+    slots: List[Slot] = []
+    slot_number = 1
+
+    for spool in SPOOLS.values():
+        normalized = _normalize_spool(spool)
+        if normalized and normalized.status == "in_stock":
+            slots.append(
+                Slot(
+                    id=1000 + slot_number,
+                    slot_number=slot_number,
+                    status="available",
+                    spool=normalized,
+                )
+            )
+            slot_number += 1
+
+    for bulk in LIBRARY_BULK:
+        pseudo_spool = Spool(
+            id=f"bulk-{bulk.id}",
+            description=bulk.description,
+            status="in_stock",
+            material=bulk.material,
+            color=bulk.color,
+            remaining_g=bulk.weight_g,
+            spool_type="bulk",
+        )
+        slots.append(
+            Slot(
+                id=2000 + slot_number,
+                slot_number=slot_number,
+                status="bulk",
+                spool=pseudo_spool,
+            )
+        )
+        slot_number += 1
+
+    return slots
+
+
+def _library_unit() -> AmsUnit:
+    return AmsUnit(id=0, name="Library", slots=_library_slots())
+
+
+def _resize_slots(unit: AmsUnit, new_size: int) -> None:
+    current_slots = len(unit.slots)
+    if new_size == current_slots:
+        return
+
+    if new_size < current_slots:
+        unit.slots = unit.slots[:new_size]
+        return
+
+    next_slot_id = _next_slot_id()
+    additional_slots = [
+        Slot(
+            id=next_slot_id + index,
+            slot_number=current_slots + index + 1,
+            status="empty",
+        )
+        for index in range(new_size - current_slots)
+    ]
+    unit.slots.extend(additional_slots)
+
+
+def _pop_bulk(bulk_id: str) -> BulkFilament | None:
+    for index, bulk in enumerate(LIBRARY_BULK):
+        if bulk.id == bulk_id:
+            return LIBRARY_BULK.pop(index)
+    return None
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):  # type: ignore[override]
+    start = time.perf_counter()
+    logger.info(
+        "request_started",
+        extra={"method": request.method, "path": request.url.path},
+    )
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "request_failed", extra={"method": request.method, "path": request.url.path}
+        )
+        raise
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "request_completed",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "duration_ms": round(duration_ms, 2),
+            },
+        )
+
+    return response
+
+
 @app.get("/health")
 async def health() -> Dict[str, str]:
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
@@ -100,9 +399,14 @@ async def health() -> Dict[str, str]:
 
 @app.get("/spools", response_model=List[Spool])
 async def list_spools(status: str | None = None) -> List[Spool]:
-    spools = list(SPOOLS.values())
-    if status:
-        spools = [spool for spool in spools if spool.status == status]
+    spools: List[Spool] = []
+    for raw in SPOOLS.values():
+        spool = _normalize_spool(raw)
+        if not spool:
+            continue
+        if status and spool.status != status:
+            continue
+        spools.append(spool)
     return spools
 
 
@@ -118,7 +422,7 @@ async def create_spool(payload: SpoolCreate) -> Spool:
 
 @app.get("/spools/{spool_id}", response_model=Spool)
 async def get_spool(spool_id: str) -> Spool:
-    spool = SPOOLS.get(spool_id)
+    spool = _get_spool(spool_id)
     if not spool:
         raise HTTPException(status_code=404, detail="Spool not found")
     return spool
@@ -126,12 +430,11 @@ async def get_spool(spool_id: str) -> Spool:
 
 @app.patch("/spools/{spool_id}", response_model=Spool)
 async def update_spool(spool_id: str, payload: SpoolStatusUpdate) -> Spool:
-    spool = SPOOLS.get(spool_id)
+    spool = _get_spool(spool_id)
     if not spool:
         raise HTTPException(status_code=404, detail="Spool not found")
 
-    allowed_statuses = {"in_stock", "opened", "assigned", "retired"}
-    if payload.status not in allowed_statuses:
+    if payload.status not in ALLOWED_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
 
     updated_spool = spool.copy(update={"status": payload.status})
@@ -140,6 +443,18 @@ async def update_spool(spool_id: str, payload: SpoolStatusUpdate) -> Spool:
         "spool_status_updated", extra={"spool_id": spool_id, "status": payload.status}
     )
     return updated_spool
+
+
+@app.delete("/spools/{spool_id}", status_code=204)
+async def delete_spool(spool_id: str) -> Response:
+    spool = _get_spool(spool_id)
+    if not spool:
+        raise HTTPException(status_code=404, detail="Spool not found")
+
+    _detach_spool(spool_id)
+    SPOOLS.pop(spool_id, None)
+    logger.info("spool_deleted", extra={"spool_id": spool_id})
+    return Response(status_code=204)
 
 
 @app.get("/spools/lookup/qr/{code}", response_model=Spool)
@@ -160,7 +475,7 @@ class AssignPayload(BaseModel):
 
 @app.post("/ams/slots/{slot_id}/assign")
 async def assign_slot(slot_id: int, payload: AssignPayload) -> Dict[str, Any]:
-    spool = SPOOLS.get(payload.spool_id)
+    spool = _get_spool(payload.spool_id)
     if not spool:
         raise HTTPException(status_code=404, detail="Spool not found")
 
@@ -185,18 +500,131 @@ async def assign_slot(slot_id: int, payload: AssignPayload) -> Dict[str, Any]:
 
 
 @app.get("/ams", response_model=List[AmsUnit])
-async def list_ams_units() -> List[AmsUnit]:
+async def list_ams_units(include_library: bool = True) -> List[AmsUnit]:
+    hydrated_units: List[AmsUnit] = []
+
     for unit in AMS_UNITS:
-        unit.slots = [_hydrate_slot(slot) for slot in unit.slots]
-    return AMS_UNITS
+        hydrated_units.append(
+            unit.copy(update={"slots": [_hydrate_slot(slot) for slot in unit.slots]})
+        )
+
+    if include_library:
+        hydrated_units.append(_library_unit())
+
+    return hydrated_units
 
 
 @app.get("/ams/{unit_id}/slots", response_model=List[Slot])
 async def list_slots(unit_id: int) -> List[Slot]:
+    if unit_id == 0:
+        return [_hydrate_slot(slot) for slot in _library_slots()]
+
     for unit in AMS_UNITS:
         if unit.id == unit_id:
             return [_hydrate_slot(slot) for slot in unit.slots]
     raise HTTPException(status_code=404, detail="AMS unit not found")
+
+
+@app.get("/library")
+async def library() -> Dict[str, Any]:
+    spools = [
+        spool
+        for spool in (_normalize_spool(raw) for raw in SPOOLS.values())
+        if spool and spool.status == "in_stock"
+    ]
+    return {
+        "spools": spools,
+        "bulk": LIBRARY_BULK,
+        "pseudo_unit": _library_unit(),
+    }
+
+
+@app.post("/library/bulk", response_model=BulkFilament, status_code=201)
+async def create_bulk(payload: BulkCreate) -> BulkFilament:
+    if any(bulk.id == payload.id for bulk in LIBRARY_BULK):
+        raise HTTPException(status_code=409, detail="Bulk filament already exists")
+
+    bulk = BulkFilament(**payload.dict())
+    LIBRARY_BULK.append(bulk)
+    logger.info("library_bulk_created", extra={"bulk_id": bulk.id})
+    return bulk
+
+
+@app.delete("/library/bulk/{bulk_id}", status_code=204)
+async def delete_bulk(bulk_id: str) -> Response:
+    bulk = _pop_bulk(bulk_id)
+    if not bulk:
+        raise HTTPException(status_code=404, detail="Bulk filament not found")
+
+    logger.info("library_bulk_deleted", extra={"bulk_id": bulk_id})
+    return Response(status_code=204)
+
+
+class SpoolFromBulk(BaseModel):
+    spool_id: str
+    description: str | None = None
+    remaining_g: int | None = None
+    status: str = Field(default="in_stock")
+
+
+@app.post("/library/bulk/{bulk_id}/spool", response_model=Spool, status_code=201)
+async def convert_bulk_to_spool(bulk_id: str, payload: SpoolFromBulk) -> Spool:
+    if payload.status not in ALLOWED_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    bulk = _pop_bulk(bulk_id)
+    if not bulk:
+        raise HTTPException(status_code=404, detail="Bulk filament not found")
+
+    if payload.spool_id in SPOOLS:
+        raise HTTPException(status_code=409, detail="Spool already exists")
+
+    spool = Spool(
+        id=payload.spool_id,
+        description=payload.description or bulk.description,
+        status=payload.status,
+        material=bulk.material,
+        color=bulk.color,
+        remaining_g=payload.remaining_g if payload.remaining_g is not None else bulk.weight_g,
+        spool_type="spool",
+    )
+    SPOOLS[spool.id] = spool
+    logger.info(
+        "bulk_converted_to_spool",
+        extra={"bulk_id": bulk_id, "spool_id": spool.id},
+    )
+    return spool
+
+
+class BulkFromSpool(BaseModel):
+    bulk_id: str
+    weight_g: int | None = None
+    stage: str = Field(default="delivered")
+
+
+@app.post("/spools/{spool_id}/to-library", response_model=BulkFilament, status_code=201)
+async def convert_spool_to_bulk(spool_id: str, payload: BulkFromSpool) -> BulkFilament:
+    spool = _get_spool(spool_id)
+    if not spool:
+        raise HTTPException(status_code=404, detail="Spool not found")
+
+    if any(bulk.id == payload.bulk_id for bulk in LIBRARY_BULK):
+        raise HTTPException(status_code=409, detail="Bulk filament already exists")
+
+    _detach_spool(spool_id)
+    SPOOLS.pop(spool_id, None)
+
+    bulk = BulkFilament(
+        id=payload.bulk_id,
+        description=spool.description,
+        material=spool.material,
+        color=spool.color,
+        weight_g=payload.weight_g if payload.weight_g is not None else spool.remaining_g,
+        stage=payload.stage,
+    )
+    LIBRARY_BULK.append(bulk)
+    logger.info("spool_moved_to_library", extra={"spool_id": spool_id, "bulk_id": bulk.id})
+    return bulk
 
 
 @app.post("/ams", response_model=AmsUnit, status_code=201)
@@ -223,33 +651,6 @@ async def update_ams_unit(unit_id: int, payload: AmsUnitUpdate) -> AmsUnit:
             unit.name = updates.get("name", unit.name)
             if "slots" in updates:
                 _resize_slots(unit, int(updates["slots"]))
-            logger.info("ams_unit_updated", extra={"unit_id": unit_id, **updates})
-            return unit
-    raise HTTPException(status_code=404, detail="AMS unit not found")
-
-
-@app.post("/ams", response_model=AmsUnit, status_code=201)
-async def create_ams_unit(payload: AmsUnitCreate) -> AmsUnit:
-    unit_id = _next_unit_id()
-    next_slot_id = _next_slot_id()
-    slots = [
-        Slot(id=next_slot_id + index, slot_number=index + 1, status="empty")
-        for index in range(payload.slots)
-    ]
-    unit = AmsUnit(id=unit_id, name=payload.name, slots=slots)
-    AMS_UNITS.append(unit)
-    logger.info("ams_unit_created", extra={"unit_id": unit_id, "slots": payload.slots})
-    return unit
-
-
-@app.patch("/ams/{unit_id}", response_model=AmsUnit)
-async def update_ams_unit(unit_id: int, payload: AmsUnitUpdate) -> AmsUnit:
-    for unit in AMS_UNITS:
-        if unit.id == unit_id:
-            updates = payload.dict(exclude_unset=True)
-            if not updates:
-                raise HTTPException(status_code=400, detail="No updates provided")
-            unit.name = updates.get("name", unit.name)
             logger.info("ams_unit_updated", extra={"unit_id": unit_id, **updates})
             return unit
     raise HTTPException(status_code=404, detail="AMS unit not found")

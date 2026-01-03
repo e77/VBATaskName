@@ -40,11 +40,11 @@
       }
       main {
         padding: 1.5rem;
-        max-width: 1200px;
+        max-width: 1500px;
         margin: 0 auto;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 1.25rem;
       }
       .panel {
         background: var(--panel);
@@ -140,6 +140,66 @@
         border-radius: 10px;
         background: #0c1524;
       }
+      .ams-columns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: stretch;
+      }
+      .ams-columns > :first-child {
+        flex: 1 1 520px;
+        min-width: 360px;
+      }
+      .ascii-hero {
+        grid-column: 1 / -1;
+        background: linear-gradient(135deg, #0a2a63, #0b1f4b);
+        border: 1px solid #1e3a8a;
+        border-radius: 16px;
+        padding: 1rem;
+        color: #dce9ff;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 20px 45px rgba(3, 7, 18, 0.55);
+      }
+      .ascii-panel {
+        background: linear-gradient(135deg, #0a2a63, #0b1f4b);
+        border: 1px solid #1e3a8a;
+        border-radius: 12px;
+        padding: 0.75rem;
+        color: #dce9ff;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 40px rgba(3, 7, 18, 0.55);
+        flex: 1 1 520px;
+        min-width: 360px;
+      }
+      .ascii-panel h3 {
+        margin: 0 0 0.5rem;
+        font-size: 1rem;
+        font-family: "Cascadia Code", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+      .ascii-panel pre {
+        margin: 0;
+        font-family: "Cascadia Code", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        background: #0b2f6b;
+        border: 1px solid #1e3a8a;
+        border-radius: 10px;
+        padding: 0.75rem;
+        color: #e4edff;
+        font-size: 13px;
+        line-height: 1.35;
+        overflow-x: auto;
+        white-space: pre;
+      }
+      .ascii-hero pre {
+        margin: 0;
+        font-family: "Cascadia Code", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        background: #0b2f6b;
+        border: 1px solid #1e3a8a;
+        border-radius: 12px;
+        padding: 0.85rem;
+        color: #e4edff;
+        font-size: 14px;
+        line-height: 1.35;
+        overflow-x: auto;
+        white-space: pre;
+      }
       .muted {
         color: var(--muted);
         font-size: 0.9rem;
@@ -175,6 +235,21 @@
         font-weight: 700;
         font-size: 0.8rem;
       }
+      .swatch {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      .toolbar {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
     </style>
   </head>
   <body>
@@ -190,12 +265,34 @@
     </header>
 
     <main>
+      <section class="ascii-hero">
+        <div class="status-line" style="align-items:flex-start; gap:1rem; flex-wrap:wrap">
+          <div>
+            <div class="badge" style="background:#22c55e;color:#06270d">Live AMS layout</div>
+            <h2 style="margin:0.35rem 0 0">Slot &amp; Library dashboard</h2>
+            <p class="muted" style="margin:0.35rem 0 0">
+              Retro ASCII view of every AMS slot and the Library shelf. Updated with each change.
+            </p>
+          </div>
+          <div style="max-width:520px; flex:1;">
+            <pre id="ams-visual" aria-live="polite" style="margin:0">Loading…</pre>
+          </div>
+        </div>
+      </section>
+
       <section class="panel">
         <h2>Create or name a spool</h2>
         <form id="spool-form">
           <div>
             <label for="spool-id">Spool ID</label>
             <input id="spool-id" name="id" required placeholder="spool-123" />
+          </div>
+          <div>
+            <label for="spool-type">Spool type</label>
+            <select id="spool-type" name="spool_type">
+              <option value="spool" selected>Spool</option>
+              <option value="bulk">Bulk</option>
+            </select>
           </div>
           <div>
             <label for="spool-description">Description</label>
@@ -233,24 +330,50 @@
 
       <section class="panel">
         <h2>AMS units</h2>
-        <form id="ams-form">
+        <div class="ams-columns">
           <div>
-            <label for="ams-name">Unit name</label>
-            <input id="ams-name" name="name" required placeholder="AMS-02" />
+            <form id="ams-form">
+              <div>
+                <label for="ams-name">Unit name</label>
+                <input id="ams-name" name="name" required placeholder="AMS-02" />
+              </div>
+              <div>
+                <label for="ams-slots">Number of slots</label>
+                <input id="ams-slots" name="slots" type="number" min="1" max="16" value="4" />
+              </div>
+              <button type="submit">Add AMS unit</button>
+            </form>
+            <div id="ams-list" class="slots" aria-live="polite" style="margin-top: 1rem"></div>
           </div>
-          <div>
-            <label for="ams-slots">Number of slots</label>
-            <input id="ams-slots" name="slots" type="number" min="1" max="16" value="4" />
+          <div class="ascii-panel" style="align-self:flex-start">
+            <h3>AMS &amp; Library view</h3>
+            <div class="muted" style="margin-bottom: 0.5rem">Visual snapshot of every unit and shelf.</div>
+            <pre id="ams-visual-inline" aria-live="polite">Loading…</pre>
           </div>
-          <button type="submit">Add AMS unit</button>
-        </form>
-        <div id="ams-list" class="slots" aria-live="polite" style="margin-top: 1rem"></div>
+        </div>
       </section>
 
       <section class="panel" style="grid-column: 1 / -1">
         <h2>Spool inventory</h2>
         <div class="muted">Click a row to edit description/status.</div>
         <table class="table" id="spool-table" aria-live="polite"></table>
+        <h3 style="margin-top:1.25rem">Add bulk filament to library</h3>
+        <form id="bulk-form" class="toolbar">
+          <input name="id" placeholder="bulk-id" required style="max-width:160px" />
+          <input name="description" placeholder="Description" required style="flex:1" />
+          <input name="material" placeholder="Material" style="max-width:140px" />
+          <input name="color" placeholder="Color" style="max-width:140px" />
+          <input name="weight_g" type="number" min="0" placeholder="Weight g" style="max-width:120px" />
+          <select name="stage" style="max-width:140px">
+            <option value="delivered">Delivered</option>
+            <option value="spooled">Spooled</option>
+            <option value="consumed">Consumed</option>
+          </select>
+          <button type="submit" style="width:auto">Add bulk</button>
+        </form>
+        <h3 style="margin-top:1.25rem">Bulk filament library</h3>
+        <div class="muted">Manage unspooled filament stock.</div>
+        <table class="table" id="bulk-table" aria-live="polite"></table>
       </section>
     </main>
 
@@ -272,11 +395,28 @@
           headers: {"Content-Type": "application/json", Accept: "application/json"},
           ...options,
         });
-        if (!response.ok) {
-          const detail = await response.json().catch(() => ({}));
-          throw new Error(detail.detail || response.statusText);
+
+        const contentType = response.headers.get("content-type") || "";
+        const hasBody = response.status !== 204;
+        let payload = null;
+
+        if (hasBody && contentType.includes("application/json")) {
+          payload = await response.json().catch(() => null);
+        } else if (hasBody) {
+          const text = await response.text();
+          try {
+            payload = JSON.parse(text);
+          } catch (error) {
+            payload = text;
+          }
         }
-        return response.json();
+
+        if (!response.ok) {
+          const detail = payload && payload.detail ? payload.detail : response.statusText;
+          throw new Error(detail);
+        }
+
+        return payload;
       }
 
       function statusPill(status) {
@@ -285,26 +425,153 @@
         return `<span class="pill ${cls}">${label}</span>`;
       }
 
+      function colorSwatch(color) {
+        if (!color) return "";
+        const safeColor = color.trim();
+        return `<span class="swatch" style="background:${safeColor}"></span>${safeColor}`;
+      }
+
       async function loadSpools() {
         const table = document.getElementById("spool-table");
-        table.innerHTML = "<tr><th>ID</th><th>Description</th><th>Status</th><th>Material</th><th>Color</th><th>Remaining</th></tr>";
+        table.innerHTML =
+          "<tr><th>ID</th><th>Description</th><th>Type</th><th>Status</th><th>Material</th><th>Color</th><th>Remaining</th><th>Actions</th></tr>";
         try {
           const spools = await api("/spools");
+          if (!spools.length) {
+            table.innerHTML += `<tr><td colspan="8" class="muted">No spools yet</td></tr>`;
+            return;
+          }
+
           spools.forEach((spool) => {
             const row = document.createElement("tr");
             row.innerHTML = `
               <td><code>${spool.id}</code></td>
               <td>${spool.description}</td>
+              <td>${spool.spool_type || "spool"}</td>
               <td>${statusPill(spool.status)}</td>
               <td>${spool.material || ""}</td>
-              <td>${spool.color || ""}</td>
+              <td>${colorSwatch(spool.color)}</td>
               <td>${spool.remaining_g ?? ""}</td>
+              <td>
+                <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
+                  <button class="danger" data-delete="${spool.id}" style="width:auto;padding:0.35rem 0.7rem">Delete</button>
+                  <button data-to-library="${spool.id}" style="width:auto;padding:0.35rem 0.7rem;background:#0ea5e9">To library</button>
+                </div>
+              </td>
             `;
             row.addEventListener("click", () => openSpoolEditor(spool));
+            const deleteBtn = row.querySelector("button[data-delete]");
+            deleteBtn.addEventListener("click", async (event) => {
+              event.stopPropagation();
+              if (!confirm(`Delete spool ${spool.id}? This cannot be undone.`)) return;
+              try {
+                await api(`/spools/${spool.id}`, {method: "DELETE"});
+                toast("Spool deleted");
+                loadSpools();
+          loadBulk();
+                loadAms();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
+            const toLibraryBtn = row.querySelector("button[data-to-library]");
+            toLibraryBtn.addEventListener("click", async (event) => {
+              event.stopPropagation();
+              const suggestedId = `bulk-${spool.id}`;
+              const bulkId = prompt("Bulk/library ID", suggestedId);
+              if (!bulkId) return;
+              const weight = prompt(
+                "Weight (g) to move to library",
+                spool.remaining_g != null ? String(spool.remaining_g) : ""
+              );
+              try {
+                await api(`/spools/${spool.id}/to-library`, {
+                  method: "POST",
+                  body: JSON.stringify({bulk_id: bulkId, weight_g: weight ? Number(weight) : null}),
+                });
+                toast("Moved to library");
+                loadSpools();
+                loadBulk();
+                loadAms();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
             table.appendChild(row);
           });
         } catch (error) {
           toast(error.message, "error");
+        }
+      }
+
+      async function loadBulk() {
+        const table = document.getElementById("bulk-table");
+        table.innerHTML =
+          "<tr><th>ID</th><th>Description</th><th>Material</th><th>Color</th><th>Weight (g)</th><th>Stage</th><th>Actions</th></tr>";
+        try {
+          const data = await api("/library");
+          const bulk = data.bulk || [];
+          if (!bulk.length) {
+            table.innerHTML += `<tr><td colspan="7" class="muted">No bulk filament in the library</td></tr>`;
+            return;
+          }
+
+          bulk.forEach((item) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+              <td><code>${item.id}</code></td>
+              <td>${item.description}</td>
+              <td>${item.material || ""}</td>
+              <td>${colorSwatch(item.color)}</td>
+              <td>${item.weight_g ?? ""}</td>
+              <td>${item.stage || ""}</td>
+              <td>
+                <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
+                  <button data-spool-bulk="${item.id}" style="width:auto;padding:0.35rem 0.7rem;background:#22c55e;color:#04111f">Spool</button>
+                  <button class="danger" data-delete-bulk="${item.id}" style="width:auto;padding:0.35rem 0.7rem">Delete</button>
+                </div>
+              </td>
+            `;
+            const deleteBtn = row.querySelector("button[data-delete-bulk]");
+            deleteBtn.addEventListener("click", async () => {
+              if (!confirm(`Delete ${item.id}? This cannot be undone.`)) return;
+              try {
+                await api(`/library/bulk/${item.id}`, {method: "DELETE"});
+                toast("Library item removed");
+                loadBulk();
+                loadAms();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
+            const spoolBtn = row.querySelector("button[data-spool-bulk]");
+            spoolBtn.addEventListener("click", async () => {
+              const spoolId = prompt("Create spool ID from this bulk", `spool-from-${item.id}`);
+              if (!spoolId) return;
+              const description = prompt("Spool description", item.description) || item.description;
+              const remaining = prompt("Remaining weight (g) for spool", item.weight_g != null ? String(item.weight_g) : "");
+              try {
+                await api(`/library/bulk/${item.id}/spool`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    spool_id: spoolId,
+                    description,
+                    remaining_g: remaining ? Number(remaining) : null,
+                    status: "in_stock",
+                  }),
+                });
+                toast("Bulk converted to spool");
+                loadBulk();
+                loadSpools();
+                loadAms();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
+            table.appendChild(row);
+          });
+        } catch (error) {
+          table.innerHTML += `<tr><td colspan="7" class="muted">${error.message}</td></tr>`;
         }
       }
 
@@ -370,25 +637,114 @@
         `;
       }
 
+      function renderReadOnlySlot(slot) {
+        const labelParts = [slot.spool?.material, slot.spool?.color].filter(Boolean);
+        const label = labelParts.join(" ") || slot.spool?.description || "Library item";
+        const typeLabel = slot.spool?.spool_type === "bulk" ? "Bulk" : "Spool";
+        const remaining = slot.spool?.remaining_g != null ? `${slot.spool.remaining_g}g` : "";
+        const statusText = slot.spool?.status || slot.status || "available";
+        return `
+          <div class="slot">
+            <div class="status-line">
+              <strong>Slot ${slot.slot_number}</strong>
+              <div>${statusPill(statusText)}</div>
+            </div>
+            <div class="muted">${typeLabel}</div>
+            <div style="margin-top:0.35rem">${label}</div>
+            <div class="muted">${[remaining, slot.spool?.id || ""].filter(Boolean).join(" • ")}</div>
+          </div>
+        `;
+      }
+
+      function padCell(text, width) {
+        if (!text) return " ".repeat(width);
+        const cleaned = String(text);
+        if (cleaned.length > width) return cleaned.slice(0, width - 1) + "…";
+        return cleaned.padEnd(width, " ");
+      }
+
+      function renderAsciiUnit(unit) {
+        const slotsPerRow = Math.max(1, Math.min(4, unit.slots.length || 1));
+        const cellWidth = 20;
+        const inner = cellWidth - 2;
+        const chunks = [];
+        for (let i = 0; i < unit.slots.length; i += slotsPerRow) {
+          chunks.push(unit.slots.slice(i, i + slotsPerRow));
+        }
+
+        const lines = [];
+        lines.push(`+${"=".repeat(unit.name.length + 6)}+`);
+        lines.push(`|  ${unit.name}  |`);
+        lines.push(`+${"=".repeat(unit.name.length + 6)}+`);
+        if (unit.slots.length === 0) {
+          lines.push("(no slots)");
+        }
+
+        const top = "+" + "-".repeat(inner) + "+";
+        chunks.forEach((chunk) => {
+          const blockLines = [[], [], [], [], []];
+          chunk.forEach((slot) => {
+            const spool = slot.spool || {};
+            const titleBase = spool.spool_type === "bulk" ? "Bulk" : spool.spool_type === "spool" ? "Spool" : slot.status || "Slot";
+            const title = padCell(`S${slot.slot_number} ${titleBase}`, inner);
+            const material = padCell([spool.material, spool.color].filter(Boolean).join(" ") || spool.description || "—", inner);
+            const remaining = padCell(
+              [
+                spool.remaining_g != null ? `${spool.remaining_g}g` : "",
+                spool.status || slot.status || "",
+              ]
+                .filter(Boolean)
+                .join(" "),
+              inner
+            );
+
+            blockLines[0].push(top);
+            blockLines[1].push(`|${title}|`);
+            blockLines[2].push(`|${material}|`);
+            blockLines[3].push(`|${remaining}|`);
+            blockLines[4].push(top);
+          });
+          blockLines.forEach((row) => lines.push(row.join(" ")));
+        });
+
+        return lines.join("\n");
+      }
+
+      function renderAscii(units) {
+        const hero = document.getElementById("ams-visual");
+        const inline = document.getElementById("ams-visual-inline");
+        const content = units.length
+          ? units.map((u) => renderAsciiUnit(u)).join("\n\n")
+          : "No AMS units yet";
+        hero.textContent = content;
+        inline.textContent = content;
+      }
+
       async function loadAms() {
         const list = document.getElementById("ams-list");
         list.innerHTML = "<div class='muted'>Loading AMS units…</div>";
         try {
           const [units, spools] = await Promise.all([api("/ams"), api("/spools")]);
           list.innerHTML = "";
+          renderAscii(units);
+
           units.forEach((unit) => {
             const wrapper = document.createElement("div");
             wrapper.className = "slot";
+            const isLibrary = unit.id === 0;
+            const slotMarkup = unit.slots
+              .map((slot) => (isLibrary ? renderReadOnlySlot(slot) : renderSlot(slot, spools)))
+              .join("");
             wrapper.innerHTML = `
               <div class="status-line">
                 <div>
                   <strong>${unit.name}</strong>
                   <div class="muted">ID: ${unit.id}</div>
                 </div>
-                <button class="rename" data-unit="${unit.id}" style="width:auto">Rename</button>
+                ${isLibrary ? "" : `<button class="rename" data-unit="${unit.id}" style="width:auto">Rename</button>`}
               </div>
               <div class="slots" style="margin-top:0.75rem">
-                ${unit.slots.map((slot) => renderSlot(slot, spools)).join("")}
+                ${slotMarkup}
               </div>
             `;
             list.appendChild(wrapper);
@@ -426,6 +782,8 @@
           });
         } catch (error) {
           list.innerHTML = `<div class='muted'>${error.message}</div>`;
+          document.getElementById("ams-visual").textContent = error.message;
+          document.getElementById("ams-visual-inline").textContent = error.message;
         }
       }
 
@@ -447,12 +805,29 @@
 
       function init() {
         document.getElementById("spool-form").addEventListener("submit", submitSpool);
+        document.getElementById("bulk-form").addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const form = event.target;
+          const payload = Object.fromEntries(new FormData(form));
+          payload.weight_g = payload.weight_g ? Number(payload.weight_g) : null;
+          try {
+            await api("/library/bulk", {method: "POST", body: JSON.stringify(payload)});
+            toast("Added to library");
+            form.reset();
+            loadBulk();
+            loadAms();
+          } catch (error) {
+            toast(error.message, "error");
+          }
+        });
         document.getElementById("ams-form").addEventListener("submit", submitAms);
         document.getElementById("refresh").addEventListener("click", () => {
           loadSpools();
+          loadBulk();
           loadAms();
         });
         loadSpools();
+        loadBulk();
         loadAms();
       }
 
