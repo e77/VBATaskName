@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, Field, validator
 
@@ -229,6 +229,17 @@ def _hydrate_slot(slot: Slot) -> Slot:
     return slot
 
 
+def _detach_spool(spool_id: str) -> None:
+    """Remove a spool reference from any AMS slot that currently uses it."""
+
+    for unit in AMS_UNITS:
+        for slot in unit.slots:
+            if slot.spool_id == spool_id:
+                slot.spool_id = None
+                slot.spool = None
+                slot.status = "empty"
+
+
 def _normalize_spool(raw: Spool | Dict[str, Any] | None) -> Spool | None:
     """Coerce stored spool records into a valid ``Spool`` instance.
 
@@ -418,6 +429,18 @@ async def update_spool(spool_id: str, payload: SpoolStatusUpdate) -> Spool:
     return updated_spool
 
 
+@app.delete("/spools/{spool_id}", status_code=204)
+async def delete_spool(spool_id: str) -> Response:
+    spool = _get_spool(spool_id)
+    if not spool:
+        raise HTTPException(status_code=404, detail="Spool not found")
+
+    _detach_spool(spool_id)
+    SPOOLS.pop(spool_id, None)
+    logger.info("spool_deleted", extra={"spool_id": spool_id})
+    return Response(status_code=204)
+
+
 @app.get("/spools/lookup/qr/{code}", response_model=Spool)
 async def lookup_qr(code: str) -> Spool:
     logger.info("QR scan received", extra={"code": code})
@@ -498,6 +521,17 @@ async def library() -> Dict[str, Any]:
         "bulk": LIBRARY_BULK,
         "pseudo_unit": _library_unit(),
     }
+
+
+@app.delete("/library/bulk/{bulk_id}", status_code=204)
+async def delete_bulk(bulk_id: str) -> Response:
+    for index, bulk in enumerate(LIBRARY_BULK):
+        if bulk.id == bulk_id:
+            del LIBRARY_BULK[index]
+            logger.info("library_bulk_deleted", extra={"bulk_id": bulk_id})
+            return Response(status_code=204)
+
+    raise HTTPException(status_code=404, detail="Bulk filament not found")
 
 
 @app.post("/ams", response_model=AmsUnit, status_code=201)

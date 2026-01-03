@@ -144,11 +144,11 @@
         display: flex;
         flex-wrap: wrap;
         gap: 1rem;
-        align-items: flex-start;
+        align-items: stretch;
       }
       .ams-columns > :first-child {
-        flex: 1 1 420px;
-        min-width: 320px;
+        flex: 1 1 520px;
+        min-width: 360px;
       }
       .ascii-panel {
         background: linear-gradient(135deg, #0a2a63, #0b1f4b);
@@ -157,8 +157,8 @@
         padding: 0.75rem;
         color: #dce9ff;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 40px rgba(3, 7, 18, 0.55);
-        flex: 0 0 420px;
-        min-width: 340px;
+        flex: 1 1 520px;
+        min-width: 360px;
         margin-left: auto;
       }
       .ascii-panel h3 {
@@ -299,6 +299,9 @@
         <h2>Spool inventory</h2>
         <div class="muted">Click a row to edit description/status.</div>
         <table class="table" id="spool-table" aria-live="polite"></table>
+        <h3 style="margin-top:1.25rem">Bulk filament library</h3>
+        <div class="muted">Manage unspooled filament stock.</div>
+        <table class="table" id="bulk-table" aria-live="polite"></table>
       </section>
     </main>
 
@@ -335,9 +338,15 @@
 
       async function loadSpools() {
         const table = document.getElementById("spool-table");
-        table.innerHTML = "<tr><th>ID</th><th>Description</th><th>Status</th><th>Material</th><th>Color</th><th>Remaining</th></tr>";
+        table.innerHTML =
+          "<tr><th>ID</th><th>Description</th><th>Status</th><th>Material</th><th>Color</th><th>Remaining</th><th>Actions</th></tr>";
         try {
           const spools = await api("/spools");
+          if (!spools.length) {
+            table.innerHTML += `<tr><td colspan="7" class="muted">No spools yet</td></tr>`;
+            return;
+          }
+
           spools.forEach((spool) => {
             const row = document.createElement("tr");
             row.innerHTML = `
@@ -347,12 +356,68 @@
               <td>${spool.material || ""}</td>
               <td>${spool.color || ""}</td>
               <td>${spool.remaining_g ?? ""}</td>
+              <td><button class="danger" data-delete="${spool.id}" style="width:auto;padding:0.35rem 0.7rem">Delete</button></td>
             `;
             row.addEventListener("click", () => openSpoolEditor(spool));
+            const deleteBtn = row.querySelector("button[data-delete]");
+            deleteBtn.addEventListener("click", async (event) => {
+              event.stopPropagation();
+              if (!confirm(`Delete spool ${spool.id}? This cannot be undone.`)) return;
+              try {
+                await api(`/spools/${spool.id}`, {method: "DELETE"});
+                toast("Spool deleted");
+                loadSpools();
+                loadAms();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
             table.appendChild(row);
           });
         } catch (error) {
           toast(error.message, "error");
+        }
+      }
+
+      async function loadBulk() {
+        const table = document.getElementById("bulk-table");
+        table.innerHTML =
+          "<tr><th>ID</th><th>Description</th><th>Material</th><th>Color</th><th>Weight (g)</th><th>Stage</th><th>Actions</th></tr>";
+        try {
+          const data = await api("/library");
+          const bulk = data.bulk || [];
+          if (!bulk.length) {
+            table.innerHTML += `<tr><td colspan="7" class="muted">No bulk filament in the library</td></tr>`;
+            return;
+          }
+
+          bulk.forEach((item) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+              <td><code>${item.id}</code></td>
+              <td>${item.description}</td>
+              <td>${item.material || ""}</td>
+              <td>${item.color || ""}</td>
+              <td>${item.weight_g ?? ""}</td>
+              <td>${item.stage || ""}</td>
+              <td><button class="danger" data-delete-bulk="${item.id}" style="width:auto;padding:0.35rem 0.7rem">Delete</button></td>
+            `;
+            const deleteBtn = row.querySelector("button[data-delete-bulk]");
+            deleteBtn.addEventListener("click", async () => {
+              if (!confirm(`Delete ${item.id}? This cannot be undone.`)) return;
+              try {
+                await api(`/library/bulk/${item.id}`, {method: "DELETE"});
+                toast("Library item removed");
+                loadBulk();
+                loadAms();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
+            table.appendChild(row);
+          });
+        } catch (error) {
+          table.innerHTML += `<tr><td colspan="7" class="muted">${error.message}</td></tr>`;
         }
       }
 
@@ -587,9 +652,11 @@
         document.getElementById("ams-form").addEventListener("submit", submitAms);
         document.getElementById("refresh").addEventListener("click", () => {
           loadSpools();
+          loadBulk();
           loadAms();
         });
         loadSpools();
+        loadBulk();
         loadAms();
       }
 
