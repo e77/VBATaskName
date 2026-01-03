@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 import textwrap
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from blessed import Terminal
 
