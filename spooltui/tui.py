@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 import textwrap
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from blessed import Terminal
 
@@ -82,10 +82,12 @@ def _slot_labels(slot: Dict[str, Any]) -> tuple[str, str, str]:
     desc = "Empty"
     color_label = "-"
     remaining = None
+    spool_type = None
 
     if isinstance(spool, dict):
         desc = spool.get("description") or spool.get("material", {}).get("name") or "Spool"
         color_value = spool.get("color")
+        spool_type = spool.get("spool_type")
         if isinstance(color_value, dict):
             color_label = color_value.get("name", "?")
         elif isinstance(color_value, str):
@@ -99,7 +101,11 @@ def _slot_labels(slot: Dict[str, Any]) -> tuple[str, str, str]:
     if remaining_text:
         color_display = f"{color_display} | {remaining_text}" if color_display != "-" else remaining_text
 
-    return status, desc, color_display
+    status_label = status
+    if spool_type and spool_type != "spool":
+        status_label = f"{status} ({spool_type})"
+
+    return status_label, desc, color_display
 
 
 def render_ams_ascii(unit_id: int | str, name: str, slots: List[Dict[str, Any]]) -> List[str]:
@@ -388,7 +394,7 @@ def _choose_unit(term: Terminal, units: List[Dict[str, Any]]) -> int | None:
 
 def configure_ams_slots(term: Terminal, client: SpoolManagerAPI) -> None:
     try:
-        units = client.list_ams_units()
+        units = client.list_ams_units(include_library=False)
     except Exception as exc:  # pragma: no cover - runtime feedback only
         display_error(term, exc)
         wait_for_back(term)
