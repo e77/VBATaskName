@@ -162,7 +162,9 @@ AMS_UNITS: List[AmsUnit] = [
         name="AMS-01",
         slots=[
             Slot(id=1, slot_number=1, status="loaded", spool_id="demo-1"),
-            Slot(id=2, slot_number=2, status="empty"),
+            Slot(id=2, slot_number=2, status="loaded", spool_id="demo-2"),
+            Slot(id=3, slot_number=3, status="empty"),
+            Slot(id=4, slot_number=4, status="empty"),
         ],
     ),
 ]

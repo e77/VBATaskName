@@ -81,6 +81,7 @@ Flags can override environment variables:
 - `4` – Assign slot
 - `5` – Mark spool opened / back to stock
 - `6` – Check for updates / redeploy containers
+- `a` – Admin / configuration (AMS slot counts)
 - `b` or `ESC` – back from subview
 - `q` – quit the app
 
