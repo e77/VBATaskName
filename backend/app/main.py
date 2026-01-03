@@ -157,6 +157,15 @@ class BulkFilament(BaseModel):
     stage: str = Field(default="delivered")
 
 
+class BulkCreate(BaseModel):
+    id: str
+    description: str
+    material: str | None = None
+    color: str | None = None
+    weight_g: int | None = None
+    stage: str = Field(default="delivered")
+
+
 class AmsUnitCreate(BaseModel):
     name: str
     slots: int = Field(default=4, ge=1, le=16)
@@ -347,6 +356,13 @@ def _resize_slots(unit: AmsUnit, new_size: int) -> None:
     unit.slots.extend(additional_slots)
 
 
+def _pop_bulk(bulk_id: str) -> BulkFilament | None:
+    for index, bulk in enumerate(LIBRARY_BULK):
+        if bulk.id == bulk_id:
+            return LIBRARY_BULK.pop(index)
+    return None
+
+
 @app.middleware("http")
 async def log_requests(request, call_next):  # type: ignore[override]
     start = time.perf_counter()
@@ -523,15 +539,92 @@ async def library() -> Dict[str, Any]:
     }
 
 
+@app.post("/library/bulk", response_model=BulkFilament, status_code=201)
+async def create_bulk(payload: BulkCreate) -> BulkFilament:
+    if any(bulk.id == payload.id for bulk in LIBRARY_BULK):
+        raise HTTPException(status_code=409, detail="Bulk filament already exists")
+
+    bulk = BulkFilament(**payload.dict())
+    LIBRARY_BULK.append(bulk)
+    logger.info("library_bulk_created", extra={"bulk_id": bulk.id})
+    return bulk
+
+
 @app.delete("/library/bulk/{bulk_id}", status_code=204)
 async def delete_bulk(bulk_id: str) -> Response:
-    for index, bulk in enumerate(LIBRARY_BULK):
-        if bulk.id == bulk_id:
-            del LIBRARY_BULK[index]
-            logger.info("library_bulk_deleted", extra={"bulk_id": bulk_id})
-            return Response(status_code=204)
+    bulk = _pop_bulk(bulk_id)
+    if not bulk:
+        raise HTTPException(status_code=404, detail="Bulk filament not found")
 
-    raise HTTPException(status_code=404, detail="Bulk filament not found")
+    logger.info("library_bulk_deleted", extra={"bulk_id": bulk_id})
+    return Response(status_code=204)
+
+
+class SpoolFromBulk(BaseModel):
+    spool_id: str
+    description: str | None = None
+    remaining_g: int | None = None
+    status: str = Field(default="in_stock")
+
+
+@app.post("/library/bulk/{bulk_id}/spool", response_model=Spool, status_code=201)
+async def convert_bulk_to_spool(bulk_id: str, payload: SpoolFromBulk) -> Spool:
+    if payload.status not in ALLOWED_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    bulk = _pop_bulk(bulk_id)
+    if not bulk:
+        raise HTTPException(status_code=404, detail="Bulk filament not found")
+
+    if payload.spool_id in SPOOLS:
+        raise HTTPException(status_code=409, detail="Spool already exists")
+
+    spool = Spool(
+        id=payload.spool_id,
+        description=payload.description or bulk.description,
+        status=payload.status,
+        material=bulk.material,
+        color=bulk.color,
+        remaining_g=payload.remaining_g if payload.remaining_g is not None else bulk.weight_g,
+        spool_type="spool",
+    )
+    SPOOLS[spool.id] = spool
+    logger.info(
+        "bulk_converted_to_spool",
+        extra={"bulk_id": bulk_id, "spool_id": spool.id},
+    )
+    return spool
+
+
+class BulkFromSpool(BaseModel):
+    bulk_id: str
+    weight_g: int | None = None
+    stage: str = Field(default="delivered")
+
+
+@app.post("/spools/{spool_id}/to-library", response_model=BulkFilament, status_code=201)
+async def convert_spool_to_bulk(spool_id: str, payload: BulkFromSpool) -> BulkFilament:
+    spool = _get_spool(spool_id)
+    if not spool:
+        raise HTTPException(status_code=404, detail="Spool not found")
+
+    if any(bulk.id == payload.bulk_id for bulk in LIBRARY_BULK):
+        raise HTTPException(status_code=409, detail="Bulk filament already exists")
+
+    _detach_spool(spool_id)
+    SPOOLS.pop(spool_id, None)
+
+    bulk = BulkFilament(
+        id=payload.bulk_id,
+        description=spool.description,
+        material=spool.material,
+        color=spool.color,
+        weight_g=payload.weight_g if payload.weight_g is not None else spool.remaining_g,
+        stage=payload.stage,
+    )
+    LIBRARY_BULK.append(bulk)
+    logger.info("spool_moved_to_library", extra={"spool_id": spool_id, "bulk_id": bulk.id})
+    return bulk
 
 
 @app.post("/ams", response_model=AmsUnit, status_code=201)

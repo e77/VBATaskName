@@ -118,6 +118,7 @@ PY
 - The backend and TUI now expose a "Library" pseudo-AMS that lists bulk filament (pellets/boxes) and spools that are in stock but not loaded into an AMS slot. It renders in the AMS overview so operators can see what inventory is ready to be loaded.
 - Filament entries carry a `spool_type` flag (`spool` vs `bulk`) so you can tell whether an entry is a physical spool or loose/bulk stock. Bulk entries include their weight in grams.
 - Assigning a spool to a real AMS slot will automatically transition its status from `in_stock` to `assigned`, and it will disappear from the Library view on the next refresh.
+- From the web console you can now add bulk filament directly, convert bulk entries into spools (which removes the bulk record), or move an existing spool back into the Library as bulk stock. The ASCII status panel mirrors these changes immediately.
 
 ## Notes
 - API errors are surfaced inline so operators can spot connectivity/auth issues quickly.
