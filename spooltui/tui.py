@@ -67,6 +67,68 @@ def color_block(term: Terminal, color: str | None) -> str:
     return f"[{color}]"
 
 
+def _center(text: str, width: int) -> str:
+    trimmed = text[: width - 1] if len(text) > width else text
+    pad = max(0, width - len(trimmed))
+    left = pad // 2
+    right = pad - left
+    return " " * left + trimmed + " " * right
+
+
+def _slot_labels(slot: Dict[str, Any]) -> tuple[str, str, str]:
+    spool = slot.get("spool") or slot.get("spool_id")
+    status = slot.get("status", "?")
+
+    desc = "Empty"
+    color_label = "-"
+    remaining = None
+
+    if isinstance(spool, dict):
+        desc = spool.get("description") or spool.get("material", {}).get("name") or "Spool"
+        color_value = spool.get("color")
+        if isinstance(color_value, dict):
+            color_label = color_value.get("name", "?")
+        elif isinstance(color_value, str):
+            color_label = color_value
+        remaining = spool.get("remaining_g")
+    elif isinstance(spool, str):
+        desc = spool
+
+    remaining_text = f"{remaining}g" if remaining is not None else ""
+    color_display = color_label
+    if remaining_text:
+        color_display = f"{color_display} | {remaining_text}" if color_display != "-" else remaining_text
+
+    return status, desc, color_display
+
+
+def render_ams_ascii(unit_id: int | str, name: str, slots: List[Dict[str, Any]]) -> List[str]:
+    if not slots:
+        return ["(no slots reported)"]
+
+    cell_width = max(12, min(18, (80 // max(1, len(slots))) - 1))
+    border = "+" + "+".join(["-" * cell_width for _ in slots]) + "+"
+    title_inner_width = len(border) - 2
+    title_line = "|" + _center(f"AMS {unit_id}: {name}", title_inner_width) + "|"
+
+    slot_labels = [f"Slot {slot.get('slot_number')}" for slot in slots]
+    status_labels = []
+    desc_labels = []
+    color_labels = []
+    for slot in slots:
+        status, desc, color_label = _slot_labels(slot)
+        status_labels.append(status)
+        desc_labels.append(desc)
+        color_labels.append(color_label)
+
+    row_slot = "|" + "|".join(_center(text, cell_width) for text in slot_labels) + "|"
+    row_status = "|" + "|".join(_center(text, cell_width) for text in status_labels) + "|"
+    row_desc = "|" + "|".join(_center(text, cell_width) for text in desc_labels) + "|"
+    row_color = "|" + "|".join(_center(text, cell_width) for text in color_labels) + "|"
+
+    return [border, title_line, border, row_slot, row_desc, row_color, border]
+
+
 def prompt_input(term: Terminal, label: str) -> str:
     print(term.clear + term.bold(label))
     print(faint("Press Enter when done.\nESC cancels."))
@@ -147,25 +209,7 @@ def view_ams_status(term: Terminal, client: SpoolManagerAPI) -> None:
             continue
 
         lines.append(term.bold(f"[{unit_id}] {name} (slots: {len(slots)})"))
-        for slot in slots:
-            slot_no = slot.get("slot_number")
-            slot_id = slot.get("id")
-            status = slot.get("status", "?")
-            spool = slot.get("spool") or slot.get("spool_id")
-
-            color = None
-            desc = ""
-            remaining = None
-            if isinstance(spool, dict):
-                desc = spool.get("description", "")
-                color = spool.get("color")
-                remaining = spool.get("remaining_g")
-            elif isinstance(spool, str):
-                desc = spool
-
-            patch = color_block(term, color)
-            remaining_text = f" | {remaining}g" if remaining is not None else ""
-            lines.append(f" Slot {slot_no}: {status} {patch} {desc}{remaining_text}")
+        lines.extend(render_ams_ascii(unit_id, name, slots))
         lines.append("")
 
     _print_lines(term, "AMS Status", lines)
