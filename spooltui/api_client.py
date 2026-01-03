@@ -128,9 +128,22 @@ class SpoolManagerAPI:
         payload = {"spool_id": spool_id}
         return self._request("POST", f"/ams/slots/{slot_id}/assign", json=payload)
 
+    def clear_slot(self, slot_id: int) -> Dict[str, Any]:
+        payload = {"spool_id": None}
+        return self._request("POST", f"/ams/slots/{slot_id}/assign", json=payload)
+
     def mark_spool_status(self, spool_id: str, status: str) -> Dict[str, Any]:
         payload = {"status": status}
         return self._request("PATCH", f"/spools/{spool_id}", json=payload)
 
     def list_usage_events(self, spool_id: str) -> List[Dict[str, Any]]:
         return self._request("GET", f"/spools/{spool_id}/events")
+
+    def update_spool(self, spool_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._request("PATCH", f"/spools/{spool_id}", json=payload)
+
+    def delete_spool(self, spool_id: str) -> None:
+        self._request("DELETE", f"/spools/{spool_id}")
+
+    def update_ams_unit(self, unit_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._request("PATCH", f"/ams/{unit_id}", json=payload)
