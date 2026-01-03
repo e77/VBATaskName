@@ -3,14 +3,14 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import subprocess
 import textwrap
 from typing import Dict, List
 
 from blessed import Terminal
 
 from .api_client import SpoolManagerAPI
-from .update import UpdateError, apply_updates, check_updates
-
+from .update import UpdateError, check_updates
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +18,6 @@ logging.basicConfig(
     filename=os.getenv("SPOOL_TUI_LOG", "spooltui.log"),
 )
 logger = logging.getLogger("spooltui")
-
 
 DUNGEON_FLAVOR = [
     "You step into the Filament Keep—rows of reels echo like stalactites.",
@@ -49,25 +48,28 @@ def wrap(text: str, width: int) -> List[str]:
 
 def color_block(term: Terminal, color: str | None) -> str:
     if not color:
-        return "[     ]"
+        return "[ ]"
+
     key = COLOR_MAP.get(color.lower()) if isinstance(color, str) else None
     if key and hasattr(term, key):
         paint = getattr(term, key)
         return paint("[####]") + term.normal
+
     if isinstance(color, str) and color.startswith("#") and len(color) == 7:
         try:
             r = int(color[1:3], 16)
             g = int(color[3:5], 16)
             b = int(color[5:7], 16)
-            return term.on_color_rgb(r, g, b) + "     " + term.normal
+            return term.on_color_rgb(r, g, b) + " " + term.normal
         except Exception:
             return "[????]"
+
     return f"[{color}]"
 
 
 def prompt_input(term: Terminal, label: str) -> str:
     print(term.clear + term.bold(label))
-    print(faint("Press Enter when done. ESC cancels."))
+    print(faint("Press Enter when done.\nESC cancels."))
     buf: List[str] = []
     with term.cbreak():
         while True:
@@ -87,28 +89,28 @@ def prompt_input(term: Terminal, label: str) -> str:
             buf.append(str(key))
             print(key, end="", flush=True)
 
+
 def faint(s: str) -> str:
-    try:
-        return faint(s)
-    except Exception:
-        return s
+    # DO NOT use term.dim() or any terminal capability here.
+    # Some terminals/terminfo entries break blessed's dim handling.
+    # Plain text is the only safe "faint".
+    return s
 
 
 def render_menu(term: Terminal) -> None:
     print(term.clear + term.bold_underline("Spool Manager Terminal"))
     print(term.bold("Dungeon Trail"))
     for line in DUNGEON_FLAVOR:
-        print(faint("  " + line))
-
+        print(faint(" " + line))
     print()
     print(term.bold("Choose your path (press key):"))
-    print("  1) AMS status overview")
-    print("  2) Inventory list")
-    print("  3) Spool lookup (ID / QR / RFID)")
-    print("  4) Assign slot")
-    print("  5) Mark spool opened / back to stock")
-    print("  6) Check for updates / redeploy")
-    print("  q) Quit")
+    print(" 1) AMS status overview")
+    print(" 2) Inventory list")
+    print(" 3) Spool lookup (ID / QR / RFID)")
+    print(" 4) Assign slot")
+    print(" 5) Mark spool opened / back to stock")
+    print(" 6) Check for updates / redeploy")
+    print(" q) Quit")
 
 
 def _print_lines(term: Terminal, title: str, lines: List[str]) -> None:
@@ -133,33 +135,37 @@ def view_ams_status(term: Terminal, client: SpoolManagerAPI) -> None:
     lines: List[str] = []
     if not units:
         lines.append("No AMS units reported.")
+
     for unit in units:
         unit_id = unit.get("id")
-        name = unit.get("name", "<unnamed>")
+        name = unit.get("name", "")
         try:
             slots = client.list_slots_for_unit(unit_id)
         except Exception as exc:  # pragma: no cover
             lines.append(term.red(f"[{unit_id}] {name} - failed to load slots: {exc}"))
             continue
+
         lines.append(term.bold(f"[{unit_id}] {name} (slots: {len(slots)})"))
         for slot in slots:
             slot_no = slot.get("slot_number")
-            slot_id = slot.get("id")
             status = slot.get("status", "?")
             spool = slot.get("spool") or slot.get("spool_id")
+
             color = None
-            desc = "<empty>"
+            desc = ""
             remaining = None
             if isinstance(spool, dict):
-                desc = spool.get("description", "<unknown>")
+                desc = spool.get("description", "")
                 color = spool.get("color")
                 remaining = spool.get("remaining_g")
             elif isinstance(spool, str):
                 desc = spool
+
             patch = color_block(term, color)
             remaining_text = f" | {remaining}g" if remaining is not None else ""
-            lines.append(f"  Slot {slot_no}: {status} {patch} {desc}{remaining_text}")
+            lines.append(f" Slot {slot_no}: {status} {patch} {desc}{remaining_text}")
         lines.append("")
+
     _print_lines(term, "AMS Status", lines)
     wait_for_back(term)
 
@@ -175,6 +181,7 @@ def view_inventory(term: Terminal, client: SpoolManagerAPI) -> None:
     lines: List[str] = []
     if not spools:
         lines.append("No spools found.")
+
     for spool in spools:
         desc = spool.get("description", "No description")
         status = spool.get("status")
@@ -182,7 +189,13 @@ def view_inventory(term: Terminal, client: SpoolManagerAPI) -> None:
         color = spool.get("color")
         patch = color_block(term, color)
         remaining_text = f" - {remaining}g left" if remaining is not None else ""
-        lines.extend(wrap(f"[{spool.get('id')}] {patch} {desc} [{status}]{remaining_text}", width=term.width - 2))
+        lines.extend(
+            wrap(
+                f"[{spool.get('id')}] {patch} {desc} [{status}]{remaining_text}",
+                width=max(10, term.width - 2),
+            )
+        )
+
     _print_lines(term, "Inventory", lines)
     wait_for_back(term)
 
@@ -190,15 +203,17 @@ def view_inventory(term: Terminal, client: SpoolManagerAPI) -> None:
 def view_spool_lookup(term: Terminal, client: SpoolManagerAPI) -> None:
     mode_map = {"i": "id", "q": "qr", "r": "rfid"}
     print(term.clear + term.bold("Lookup mode"))
-    print("Press i for Spool ID, q for QR code, r for RFID tag. ESC to cancel.")
+    print("Press i for Spool ID, q for QR code, r for RFID tag.\nESC to cancel.")
     with term.cbreak():
         key = term.inkey()
         if key.name == "KEY_ESCAPE":
             return
+
     mode = mode_map.get(str(key), "id")
     identifier = prompt_input(term, f"Enter {mode.upper()} value: ")
     if not identifier:
         return
+
     try:
         spool = client.lookup_spool(identifier, mode=mode)
         logger.info("lookup", extra={"mode": mode, "identifier": identifier})
@@ -207,24 +222,30 @@ def view_spool_lookup(term: Terminal, client: SpoolManagerAPI) -> None:
         display_error(term, exc)
         wait_for_back(term)
         return
+
     lines = [f"ID: {spool.get('id')}", f"Description: {spool.get('description', 'n/a')}"]
     status = spool.get("status")
     if status:
         lines.append(f"Status: {status}")
+
     remaining = spool.get("remaining_g")
     if remaining is not None:
         lines.append(f"Remaining: {remaining} g")
+
     material = spool.get("material")
     if isinstance(material, dict):
         lines.append(f"Material: {material.get('name')}")
+
     color = spool.get("color")
     if isinstance(color, dict):
         lines.append(f"Color: {color.get('name')} ({color.get('hex', '')})")
+
     events = spool.get("events")
     if events:
         lines.append("Recent events:")
         for ev in events[:5]:
-            lines.append(f"  - {ev.get('event_type')} {ev.get('amount_g') or ''}g")
+            lines.append(f" - {ev.get('event_type')} {ev.get('amount_g') or ''}g")
+
     _print_lines(term, "Lookup Result", lines)
     wait_for_back(term)
 
@@ -240,18 +261,18 @@ def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
     print(term.clear + term.bold("Available slots (enter slot ID):"))
     for unit in units:
         unit_id = unit.get("id")
-        name = unit.get("name", "<unnamed>")
+        name = unit.get("name", "")
         print(term.bold(f"[{unit_id}] {name}"))
         for slot in unit.get("slots", []):
             slot_no = slot.get("slot_number")
             slot_id = slot.get("id")
             spool = slot.get("spool") or slot.get("spool_id")
-            spool_display = "<empty>"
+            spool_display = ""
             if isinstance(spool, dict):
-                spool_display = spool.get("description", spool.get("id", "<unknown>"))
+                spool_display = spool.get("description", spool.get("id", ""))
             elif isinstance(spool, str):
                 spool_display = spool
-            print(f"  Slot {slot_no} -> id {slot_id} ({spool_display})")
+            print(f" Slot {slot_no} -> id {slot_id} ({spool_display})")
         print()
 
     slot_id = prompt_input(term, "Enter slot ID to assign: ")
@@ -260,6 +281,7 @@ def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
     spool_id = prompt_input(term, "Enter spool ID to load into slot: ")
     if not spool_id:
         return
+
     try:
         result = client.assign_slot(int(slot_id), spool_id)
         logger.info("assign_slot", extra={"slot_id": slot_id, "spool_id": spool_id})
@@ -268,6 +290,7 @@ def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
         display_error(term, exc)
         wait_for_back(term)
         return
+
     _print_lines(term, "Slot Assigned", [f"Slot {slot_id} now holds spool {spool_id}.", str(result)])
     wait_for_back(term)
 
@@ -276,12 +299,14 @@ def mark_status(term: Terminal, client: SpoolManagerAPI) -> None:
     spool_id = prompt_input(term, "Enter spool ID: ")
     if not spool_id:
         return
+
     print(term.clear + term.bold("Set status"))
-    print("Press o for opened, s for in_stock. ESC to cancel.")
+    print("Press o for opened, s for in_stock.\nESC to cancel.")
     with term.cbreak():
         key = term.inkey()
         if key.name == "KEY_ESCAPE":
             return
+
     status = "opened" if str(key) == "o" else "in_stock"
     try:
         result = client.mark_spool_status(spool_id, status=status)
@@ -291,8 +316,62 @@ def mark_status(term: Terminal, client: SpoolManagerAPI) -> None:
         display_error(term, exc)
         wait_for_back(term)
         return
+
     _print_lines(term, "Status Updated", [f"Spool {spool_id} is now {status}.", str(result)])
     wait_for_back(term)
+
+
+def _run(cmd: List[str], cwd: str) -> tuple[int, str]:
+    p = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+    out = (p.stdout or "") + (p.stderr or "")
+    return p.returncode, out.strip()
+
+
+def _tracked_dirty(repo_root: str) -> bool:
+    # IMPORTANT: ignore untracked files (.env/logs/dumps/__pycache__).
+    code, out = _run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repo_root)
+    if code != 0:
+        return True  # be conservative if git itself fails
+    return out.strip() != ""
+
+
+def _remote_master_update(repo_root: str, remote: str, branch: str) -> List[str]:
+    """
+    Remote is the master: force local checkout to match remote/branch, then restart containers.
+    Keeps local runtime/config files by excluding them from git clean.
+    """
+    logs: List[str] = []
+
+    def run_or_raise(cmd: List[str]) -> None:
+        code, out = _run(cmd, cwd=repo_root)
+        logs.append(f"$ {' '.join(cmd)}")
+        if out:
+            logs.append(out)
+        if code != 0:
+            raise UpdateError(f"Command failed ({code}): {' '.join(cmd)}\n{out}")
+
+    run_or_raise(["git", "fetch", remote])
+    run_or_raise(["git", "reset", "--hard", f"{remote}/{branch}"])
+
+    # Clean untracked, but KEEP your runtime/config stuff.
+    run_or_raise(
+        [
+            "git",
+            "clean",
+            "-fd",
+            "-e",
+            ".env",
+            "-e",
+            "backup/dumps",
+            "-e",
+            "spooltui.log",
+            "-e",
+            "spooltui/__pycache__",
+        ]
+    )
+
+    run_or_raise(["docker", "compose", "up", "-d", "--build"])
+    return logs
 
 
 def check_for_updates(term: Terminal) -> None:
@@ -303,6 +382,8 @@ def check_for_updates(term: Terminal) -> None:
         wait_for_back(term)
         return
 
+    tracked_dirty = _tracked_dirty(status.repo_root)
+
     lines: List[str] = [
         f"Repository: {status.repo_root}",
         f"Remote: {status.remote}/{status.branch}",
@@ -311,8 +392,9 @@ def check_for_updates(term: Terminal) -> None:
         f"Ahead of remote: {status.ahead} commits",
         f"Behind remote: {status.behind} commits",
     ]
-    if status.dirty:
-        lines.append(term.yellow("Working tree has local changes; update may fail."))
+
+    if tracked_dirty:
+        lines.append(term.yellow("Tracked files modified locally; update will discard them (remote is master)."))
 
     print(term.clear + term.bold("Update check"))
     for line in lines:
@@ -324,7 +406,8 @@ def check_for_updates(term: Terminal) -> None:
         wait_for_back(term)
         return
 
-    print(term.bold("Press u to pull latest and restart containers, or b to go back."))
+    print(term.bold("Press u to update from remote main and restart containers, or b to go back."))
+
     with term.cbreak():
         while True:
             key = term.inkey()
@@ -335,7 +418,8 @@ def check_for_updates(term: Terminal) -> None:
                 return
             if key_str == "u":
                 try:
-                    refreshed_status, logs = apply_updates(status)
+                    logs = _remote_master_update(status.repo_root, status.remote, status.branch)
+                    refreshed_status = check_updates()
                 except UpdateError as exc:  # pragma: no cover - environment dependent
                     display_error(term, exc)
                     wait_for_back(term)
@@ -373,6 +457,7 @@ def main(argv: List[str] | None = None) -> int:
         timeout=args.timeout,
         offline_cache=os.getenv("SPOOL_OFFLINE_CACHE") is not None,
     )
+
     term = Terminal()
 
     try:
@@ -389,6 +474,7 @@ def main(argv: List[str] | None = None) -> int:
                 key = term.inkey()
             if not key:
                 continue
+
             key_str = str(key).lower()
             if key_str == "q" or key.name == "KEY_ESCAPE":
                 break
@@ -404,10 +490,10 @@ def main(argv: List[str] | None = None) -> int:
                 mark_status(term, client)
             elif key_str == "6":
                 check_for_updates(term)
+
     print(term.clear + term.bold("Farewell, adventurer."))
     return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-
