@@ -1,9 +1,14 @@
-"""Utilities for checking and applying updates on deployed devices.
+"""
+Utilities for checking and applying updates on deployed devices.
 
-The Raspberry Pi kiosk workflow keeps the git working tree on disk. These
-helpers fetch the latest commits, perform a fast-forward pull, and restart the
-Compose stack without touching the persistent database volume so existing data
-is preserved.
+Remote is the master source of truth (GitHub main). The device should not
+accumulate local modifications that block updates.
+
+Update behavior (when applying updates):
+- git fetch <remote>
+- git reset --hard <remote>/<branch>
+- git clean -fd (excluding local runtime/config files)
+- docker compose up -d --build
 """
 
 from __future__ import annotations
@@ -32,32 +37,19 @@ class UpdateStatus:
 
 
 def _run_command(cmd: List[str], cwd: Path) -> List[str]:
-    """Run a command and stream its output to avoid blocking pipes."""
+    """
+    Run a command, raising UpdateError on failure.
+    Returns stdout lines (non-empty).
+    """
+    result = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        stdout = (result.stdout or "").strip()
+        details = stderr or stdout or "unknown error"
+        raise UpdateError(f"{' '.join(cmd)} failed: {details}")
 
-    process = subprocess.Popen(
-        cmd,
-        cwd=str(cwd),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-
-    lines: List[str] = []
-    assert process.stdout is not None
-    for line in process.stdout:
-        cleaned = line.rstrip()
-        if cleaned:
-            lines.append(cleaned)
-
-    process.wait()
-
-    if process.returncode != 0:
-        tail = lines[-20:] if lines else ["(no output)"]
-        details = "\n".join(tail)
-        raise UpdateError(f"{' '.join(cmd)} failed with code {process.returncode}:\n{details}")
-
-    return lines or ["(no output)"]
+    output = (result.stdout or "").strip()
+    return [line for line in output.splitlines() if line.strip()]
 
 
 def _git(args: List[str], cwd: Path) -> List[str]:
@@ -66,8 +58,7 @@ def _git(args: List[str], cwd: Path) -> List[str]:
 
 def _locate_repo_root(preferred: Path | None = None) -> Path:
     """Find the git repository root, defaulting to the current working directory."""
-
-    start = preferred or Path(os.getenv("SPOOL_REPO_ROOT", Path.cwd()))
+    start = preferred or Path(os.getenv("SPOOL_REPO_ROOT", str(Path.cwd())))
     candidates = [start]
 
     # Fallback to the project root relative to this file for packaged runs.
@@ -84,7 +75,10 @@ def _locate_repo_root(preferred: Path | None = None) -> Path:
 
 
 def check_updates(
-    remote: str = "origin", branch: str | None = None, fetch: bool = True, repo_root: Path | None = None
+    remote: str = "origin",
+    branch: str | None = None,
+    fetch: bool = True,
+    repo_root: Path | None = None,
 ) -> UpdateStatus:
     repo_root = _locate_repo_root(repo_root)
 
@@ -99,10 +93,16 @@ def check_updates(
     remote_ref = f"{remote}/{branch}"
     remote_revision = _git(["rev-parse", remote_ref], cwd=repo_root)[0]
 
-    ahead_behind = _git(["rev-list", "--left-right", "--count", f"{branch}...{remote_ref}"], cwd=repo_root)[0]
+    ahead_behind = _git(
+        ["rev-list", "--left-right", "--count", f"{branch}...{remote_ref}"],
+        cwd=repo_root,
+    )[0]
     ahead_str, behind_str = ahead_behind.split()
 
-    dirty = bool(_git(["status", "--porcelain"], cwd=repo_root))
+    # IMPORTANT:
+    # "dirty" should mean tracked modifications that could matter.
+    # Untracked files (.env, logs, dumps, __pycache__) should not trigger this.
+    dirty = bool(_git(["status", "--porcelain", "--untracked-files=no"], cwd=repo_root))
 
     return UpdateStatus(
         repo_root=repo_root,
@@ -117,22 +117,51 @@ def check_updates(
 
 
 def apply_updates(status: UpdateStatus) -> Tuple[UpdateStatus, List[str]]:
-    """Fast-forward to the remote branch and restart the Compose stack.
+    """
+    Remote is master: force local checkout to match remote branch, then restart Compose stack.
 
     Returns the refreshed status and a list of log lines for user display.
     """
-
     logs: List[str] = []
 
-    steps = [
-        ("git pull", ["git", "pull", "--ff-only", status.remote, status.branch]),
-        ("docker compose pull", ["docker", "compose", "pull"]),
-        ("docker compose up", ["docker", "compose", "up", "-d", "--build"]),
+    def log_cmd(cmd: List[str]) -> None:
+        logs.append(f"$ {' '.join(cmd)}")
+
+    # 1) Fetch latest from remote
+    log_cmd(["git", "fetch", status.remote])
+    _git(["fetch", status.remote], cwd=status.repo_root)
+
+    # 2) Hard reset local branch to remote/<branch>
+    remote_ref = f"{status.remote}/{status.branch}"
+    log_cmd(["git", "reset", "--hard", remote_ref])
+    _git(["reset", "--hard", remote_ref], cwd=status.repo_root)
+
+    # 3) Clean untracked files, but keep local runtime/config
+    # NOTE: This matches your "appliance" model without nuking .env etc.
+    clean_cmd = [
+        "git",
+        "clean",
+        "-fd",
+        "-e",
+        ".env",
+        "-e",
+        "backup/dumps",
+        "-e",
+        "spooltui.log",
+        "-e",
+        "spooltui/__pycache__",
     ]
+    log_cmd(clean_cmd)
+    _git(clean_cmd[1:], cwd=status.repo_root)  # pass args only to _git
 
-    for label, command in steps:
-        logs.append(f"$ {' '.join(command)}")
-        logs.extend(_run_command(command, cwd=status.repo_root))
+    # 4) Restart the stack (same as your manual working command)
+    log_cmd(["docker", "compose", "up", "-d", "--build"])
+    logs.extend(_run_command(["docker", "compose", "up", "-d", "--build"], cwd=status.repo_root))
 
-    refreshed_status = check_updates(remote=status.remote, branch=status.branch, fetch=False, repo_root=status.repo_root)
+    refreshed_status = check_updates(
+        remote=status.remote,
+        branch=status.branch,
+        fetch=False,
+        repo_root=status.repo_root,
+    )
     return refreshed_status, logs

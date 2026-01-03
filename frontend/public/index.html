@@ -14,11 +14,7 @@
         --text: #e2e8f0;
         --muted: #94a3b8;
         --danger: #f97316;
-        --success: #22c55e;
         font-family: "Inter", system-ui, -apple-system, sans-serif;
-      }
-      * {
-        box-sizing: border-box;
       }
       body {
         margin: 0;
@@ -29,34 +25,18 @@
         min-height: 100vh;
       }
       header {
-        padding: 1.25rem 2rem;
+        padding: 1.5rem 2rem;
         background: #0c1a2c;
         border-bottom: 1px solid var(--border);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        gap: 0.75rem;
         flex-wrap: wrap;
+        gap: 0.75rem;
       }
       h1 {
         margin: 0;
-        font-size: 1.3rem;
-      }
-      nav {
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-      }
-      nav button {
-        width: auto;
-        background: #0c1524;
-        border: 1px solid var(--border);
-        color: var(--text);
-        padding: 0.55rem 0.9rem;
-      }
-      nav button.active {
-        border-color: var(--accent);
-        color: var(--accent);
+        font-size: 1.4rem;
       }
       main {
         padding: 1.5rem;
@@ -65,19 +45,18 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
         gap: 1rem;
-        align-items: start;
       }
       .panel {
         background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 14px;
-        padding: 1.1rem;
+        padding: 1.25rem;
         box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
       }
       .panel h2 {
         margin-top: 0;
-        margin-bottom: 0.6rem;
-        font-size: 1.05rem;
+        margin-bottom: 0.75rem;
+        font-size: 1.1rem;
       }
       form {
         display: grid;
@@ -103,7 +82,7 @@
         resize: vertical;
         min-height: 68px;
       }
-      button.primary {
+      button {
         background: linear-gradient(135deg, #0ea5e9, #22c55e);
         border: none;
         color: #04111f;
@@ -111,7 +90,7 @@
         cursor: pointer;
         transition: transform 0.1s ease, box-shadow 0.2s ease;
       }
-      button.primary:hover {
+      button:hover {
         transform: translateY(-1px);
         box-shadow: 0 12px 28px rgba(14, 165, 233, 0.35);
       }
@@ -145,14 +124,32 @@
         background: #0ea5e9;
       }
       .pill.opened {
-        background: #fcd34d;
+        background: #facc15;
       }
       .pill.retired {
-        background: #f97316;
+        background: #cbd5e1;
+        color: #0f172a;
+      }
+      .slots {
+        display: grid;
+        gap: 0.75rem;
+      }
+      .slot {
+        border: 1px solid var(--border);
+        padding: 0.75rem;
+        border-radius: 10px;
+        background: #0c1524;
       }
       .muted {
         color: var(--muted);
         font-size: 0.9rem;
+      }
+      .status-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
       }
       .toast {
         position: fixed;
@@ -177,73 +174,6 @@
         color: #04111f;
         font-weight: 700;
         font-size: 0.8rem;
-        display: inline-block;
-        margin-bottom: 0.35rem;
-      }
-      .ams-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 0.75rem;
-      }
-      .slot-card {
-        border: 1px solid var(--border);
-        padding: 0.75rem;
-        border-radius: 12px;
-        background: #0c1524;
-      }
-      .slot-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .slot-body {
-        display: flex;
-        gap: 0.6rem;
-        align-items: center;
-        margin-top: 0.5rem;
-      }
-      .swatch {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
-        border: 1px solid var(--border);
-        background: var(--border);
-      }
-      .actions {
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-      }
-      .qty-controls {
-        display: inline-flex;
-        gap: 0.25rem;
-        align-items: center;
-      }
-      .qty-controls button {
-        width: auto;
-        padding: 0.35rem 0.55rem;
-      }
-      .chip {
-        display: inline-flex;
-        gap: 0.35rem;
-        align-items: center;
-        border: 1px solid var(--border);
-        padding: 0.3rem 0.6rem;
-        border-radius: 999px;
-        background: #0c1524;
-      }
-      .hidden {
-        display: none;
-      }
-      .stacked {
-        display: grid;
-        gap: 1rem;
-      }
-      .toolbar {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        flex-wrap: wrap;
       }
     </style>
   </head>
@@ -252,94 +182,75 @@
       <div>
         <div class="badge">Web Console</div>
         <h1>Spool &amp; AMS Manager</h1>
-        <p class="muted">Visualize loaded AMS slots, stock spools, and update quantities quickly.</p>
+        <p class="muted">Assign spools, name units, and keep AMS slots in sync.</p>
       </div>
-      <nav>
-        <button id="dashboard-tab" class="active">Dashboard</button>
-        <button id="admin-tab">Admin</button>
-        <button id="refresh" class="primary" style="width: auto">Refresh data</button>
-      </nav>
+      <div>
+        <button id="refresh">Refresh data</button>
+      </div>
     </header>
 
     <main>
-      <section class="panel" id="ams-overview-panel" style="grid-column: 1 / -1">
-        <div class="toolbar">
+      <section class="panel">
+        <h2>Create or name a spool</h2>
+        <form id="spool-form">
           <div>
-            <h2 style="margin: 0">AMS overview</h2>
-            <p class="muted" style="margin: 0">Two AMS units with slot colors and assigned spools.</p>
+            <label for="spool-id">Spool ID</label>
+            <input id="spool-id" name="id" required placeholder="spool-123" />
           </div>
-        </div>
-        <div id="ams-overview" class="ams-grid" aria-live="polite"></div>
+          <div>
+            <label for="spool-description">Description</label>
+            <textarea
+              id="spool-description"
+              name="description"
+              placeholder="e.g. Bambu Matte PLA, Silver"
+              required
+            ></textarea>
+          </div>
+          <div>
+            <label for="spool-material">Material</label>
+            <input id="spool-material" name="material" placeholder="PLA, PETG" />
+          </div>
+          <div>
+            <label for="spool-color">Color</label>
+            <input id="spool-color" name="color" placeholder="Silver" />
+          </div>
+          <div>
+            <label for="spool-remaining">Remaining (g)</label>
+            <input id="spool-remaining" name="remaining_g" type="number" min="0" />
+          </div>
+          <div>
+            <label for="spool-status">Status</label>
+            <select id="spool-status" name="status">
+              <option value="in_stock">In stock</option>
+              <option value="opened">Opened</option>
+              <option value="assigned">Assigned</option>
+              <option value="retired">Retired</option>
+            </select>
+          </div>
+          <button type="submit">Save spool</button>
+        </form>
       </section>
 
-      <section class="panel" id="inventory-panel" style="grid-column: 1 / -1">
-        <div class="toolbar" style="justify-content: space-between">
+      <section class="panel">
+        <h2>AMS units</h2>
+        <form id="ams-form">
           <div>
-            <h2 style="margin: 0">Spool inventory</h2>
-            <p class="muted" style="margin: 0">Primary view: what's loaded and what's in stock.</p>
+            <label for="ams-name">Unit name</label>
+            <input id="ams-name" name="name" required placeholder="AMS-02" />
           </div>
-        </div>
+          <div>
+            <label for="ams-slots">Number of slots</label>
+            <input id="ams-slots" name="slots" type="number" min="1" max="16" value="4" />
+          </div>
+          <button type="submit">Add AMS unit</button>
+        </form>
+        <div id="ams-list" class="slots" aria-live="polite" style="margin-top: 1rem"></div>
+      </section>
+
+      <section class="panel" style="grid-column: 1 / -1">
+        <h2>Spool inventory</h2>
+        <div class="muted">Click a row to edit description/status.</div>
         <table class="table" id="spool-table" aria-live="polite"></table>
-      </section>
-
-      <section class="panel hidden" id="admin-panel" style="grid-column: 1 / -1">
-        <div class="stacked">
-          <div>
-            <h2>Spool admin</h2>
-            <form id="spool-form">
-              <div>
-                <label for="spool-id">Spool ID</label>
-                <input id="spool-id" name="id" required placeholder="spool-123" />
-              </div>
-              <div>
-                <label for="spool-description">Description</label>
-                <textarea id="spool-description" name="description" placeholder="e.g. Bambu Matte PLA, Silver" required></textarea>
-              </div>
-              <div class="actions">
-                <div style="flex:1">
-                  <label for="spool-material">Material</label>
-                  <input id="spool-material" name="material" placeholder="PLA, PETG" />
-                </div>
-                <div style="flex:1">
-                  <label for="spool-color">Color</label>
-                  <input id="spool-color" name="color" placeholder="Silver or #cccccc" />
-                </div>
-                <div style="flex:1">
-                  <label for="spool-remaining">Remaining (g)</label>
-                  <input id="spool-remaining" name="remaining_g" type="number" min="0" />
-                </div>
-                <div style="flex:1">
-                  <label for="spool-status">Status</label>
-                  <select id="spool-status" name="status">
-                    <option value="in_stock">In stock</option>
-                    <option value="opened">Opened</option>
-                    <option value="assigned">Assigned</option>
-                    <option value="retired">Retired</option>
-                  </select>
-                </div>
-              </div>
-              <button class="primary" type="submit">Save spool</button>
-            </form>
-          </div>
-
-          <div>
-            <h2>AMS admin</h2>
-            <form id="ams-form" class="actions">
-              <div style="flex:2">
-                <label for="ams-name">Unit name</label>
-                <input id="ams-name" name="name" required placeholder="AMS-03" />
-              </div>
-              <div style="flex:1">
-                <label for="ams-slots">Number of slots</label>
-                <input id="ams-slots" name="slots" type="number" min="1" max="16" value="4" />
-              </div>
-              <div style="flex:1; align-self: flex-end">
-                <button class="primary" type="submit">Add AMS unit</button>
-              </div>
-            </form>
-            <div id="ams-admin-list" class="stacked" style="margin-top: 0.75rem"></div>
-          </div>
-        </div>
       </section>
     </main>
 
@@ -349,12 +260,6 @@
       const API_BASE = "/api";
 
       const toastEl = document.getElementById("toast");
-      const dashboardTab = document.getElementById("dashboard-tab");
-      const adminTab = document.getElementById("admin-tab");
-      const adminPanel = document.getElementById("admin-panel");
-
-      let state = { spools: [], units: [] };
-
       function toast(message, tone = "info") {
         toastEl.textContent = message;
         toastEl.style.borderColor = tone === "error" ? "var(--danger)" : "var(--accent)";
@@ -371,7 +276,7 @@
           const detail = await response.json().catch(() => ({}));
           throw new Error(detail.detail || response.statusText);
         }
-        return response.status === 204 ? {} : response.json();
+        return response.json();
       }
 
       function statusPill(status) {
@@ -380,152 +285,46 @@
         return `<span class="pill ${cls}">${label}</span>`;
       }
 
-      function cssColor(value) {
-        if (!value) return "#1f2937";
-        return value;
-      }
-
-      async function refreshData() {
+      async function loadSpools() {
+        const table = document.getElementById("spool-table");
+        table.innerHTML = "<tr><th>ID</th><th>Description</th><th>Status</th><th>Material</th><th>Color</th><th>Remaining</th></tr>";
         try {
-          const [spools, units] = await Promise.all([api("/spools"), api("/ams")]);
-          state = { spools, units };
-          renderDashboard();
-          renderInventory();
-          renderAdminUnits();
+          const spools = await api("/spools");
+          spools.forEach((spool) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+              <td><code>${spool.id}</code></td>
+              <td>${spool.description}</td>
+              <td>${statusPill(spool.status)}</td>
+              <td>${spool.material || ""}</td>
+              <td>${spool.color || ""}</td>
+              <td>${spool.remaining_g ?? ""}</td>
+            `;
+            row.addEventListener("click", () => openSpoolEditor(spool));
+            table.appendChild(row);
+          });
         } catch (error) {
           toast(error.message, "error");
         }
       }
 
-      function renderDashboard() {
-        const container = document.getElementById("ams-overview");
-        container.innerHTML = "";
-        if (!state.units.length) {
-          container.innerHTML = "<div class='muted'>No AMS units configured.</div>";
-          return;
-        }
-        state.units.forEach((unit) => {
-          const card = document.createElement("div");
-          card.className = "panel";
-          card.innerHTML = `
-            <div class="slot-head" style="margin-bottom:0.5rem">
-              <div>
-                <strong>${unit.name}</strong>
-                <div class="muted">ID: ${unit.id}</div>
-              </div>
-              <div class="chip"><span>Slots</span><strong>${unit.slots.length}</strong></div>
-            </div>
-            <div class="ams-grid">
-              ${unit.slots
-                .map((slot) => {
-                  const spool = state.spools.find((s) => s.id === slot.spool_id) || slot.spool;
-                  const desc = spool ? spool.description : "Empty";
-                  const remaining = spool?.remaining_g ?? "—";
-                  const color = cssColor(spool?.color);
-                  return `
-                    <div class="slot-card">
-                      <div class="slot-head">
-                        <strong>Slot ${slot.slot_number}</strong>
-                        <div>${slot.spool_id ? statusPill("assigned") : statusPill(slot.status)}</div>
-                      </div>
-                      <div class="slot-body">
-                        <div class="swatch" style="background:${color}"></div>
-                        <div>
-                          <div class="muted">${slot.spool_id || "empty"}</div>
-                          <div>${desc}</div>
-                        </div>
-                      </div>
-                      <div class="muted">Remaining: ${remaining === "—" ? "—" : remaining + " g"}</div>
-                    </div>`;
-                })
-                .join("")}
-            </div>`;
-          container.appendChild(card);
-        });
-      }
-
-      function renderInventory() {
-        const table = document.getElementById("spool-table");
-        table.innerHTML =
-          "<tr><th>ID</th><th>Description</th><th>Color</th><th>Status</th><th>Remaining</th><th>Actions</th></tr>";
-        if (!state.spools.length) {
-          const row = document.createElement("tr");
-          row.innerHTML = `<td colspan="6" class="muted">No spools found.</td>`;
-          table.appendChild(row);
-          return;
-        }
-        state.spools.forEach((spool) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td><code>${spool.id}</code></td>
-            <td>${spool.description}</td>
-            <td><span class="swatch" style="background:${cssColor(spool.color)}"></span> ${spool.color || ""}</td>
-            <td>${statusPill(spool.status)}</td>
-            <td>
-              <div class="qty-controls">
-                <button data-delta="-10" data-id="${spool.id}">-10</button>
-                <strong>${spool.remaining_g ?? "?"} g</strong>
-                <button data-delta="10" data-id="${spool.id}">+10</button>
-              </div>
-            </td>
-            <td class="actions">
-              <button data-edit="${spool.id}" style="width:auto">Edit</button>
-              <button class="danger" data-delete="${spool.id}" style="width:auto">Delete</button>
-            </td>`;
-          table.appendChild(row);
-        });
-
-        table.querySelectorAll("button[data-delta]").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const delta = Number(btn.dataset.delta);
-            const spool = state.spools.find((s) => s.id === btn.dataset.id);
-            const nextValue = Math.max(0, (spool.remaining_g || 0) + delta);
-            await updateSpool(spool.id, { remaining_g: nextValue });
-          });
-        });
-
-        table.querySelectorAll("button[data-edit]").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const spool = state.spools.find((s) => s.id === btn.dataset.edit);
-            openSpoolEditor(spool);
-          });
-        });
-
-        table.querySelectorAll("button[data-delete]").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const spoolId = btn.dataset.delete;
-            if (!confirm(`Delete spool ${spoolId}? This will clear any slot using it.`)) return;
-            try {
-              await api(`/spools/${spoolId}`, { method: "DELETE" });
-              toast("Spool deleted");
-              refreshData();
-            } catch (error) {
-              toast(error.message, "error");
-            }
-          });
-        });
-      }
-
       function openSpoolEditor(spool) {
         const description = prompt("Description", spool.description);
         if (description === null) return;
-        const status = prompt("Status (in_stock, opened, assigned, retired)", spool.status);
+        const status = prompt(
+          "Status (in_stock, opened, assigned, retired)",
+          spool.status
+        );
         if (!status) return;
-        const color = prompt("Color", spool.color || "");
-        const remaining = prompt("Remaining grams", spool.remaining_g ?? "");
-        updateSpool(spool.id, {
-          description,
-          status,
-          color,
-          remaining_g: remaining === null || remaining === "" ? null : Number(remaining),
-        });
+        updateSpool(spool.id, {description, status});
       }
 
       async function updateSpool(id, payload) {
         try {
-          await api(`/spools/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+          await api(`/spools/${id}`, {method: "PATCH", body: JSON.stringify(payload)});
           toast("Spool updated");
-          refreshData();
+          loadSpools();
+          loadAms();
         } catch (error) {
           toast(error.message, "error");
         }
@@ -538,90 +337,96 @@
         if (payload.remaining_g === "") delete payload.remaining_g;
         payload.remaining_g = payload.remaining_g ? Number(payload.remaining_g) : null;
         try {
-          await api("/spools", { method: "POST", body: JSON.stringify(payload) });
+          await api("/spools", {method: "POST", body: JSON.stringify(payload)});
           toast("Spool saved");
           form.reset();
-          refreshData();
+          loadSpools();
         } catch (error) {
           toast(error.message, "error");
         }
       }
 
-      function renderAdminUnits() {
-        const list = document.getElementById("ams-admin-list");
-        list.innerHTML = "";
-        if (!state.units.length) {
-          list.innerHTML = "<div class='muted'>No AMS units created yet.</div>";
-          return;
-        }
-        state.units.forEach((unit) => {
-          const wrapper = document.createElement("div");
-          wrapper.className = "panel";
-          wrapper.innerHTML = `
-            <div class="actions" style="justify-content: space-between; margin-bottom:0.5rem">
-              <div>
-                <strong>${unit.name}</strong>
-                <div class="muted">ID: ${unit.id}</div>
-              </div>
-              <div class="actions">
-                <input type="text" value="${unit.name}" data-rename="${unit.id}" style="width: 140px" />
-                <input type="number" min="1" max="16" value="${unit.slots.length}" data-slot-count="${unit.id}" style="width: 90px" />
-                <button data-save-unit="${unit.id}" style="width:auto">Save</button>
-              </div>
+      function renderSlot(slot, spools) {
+        const options = spools
+          .map((spool) => `<option value="${spool.id}" ${slot.spool_id === spool.id ? "selected" : ""}>${spool.description}</option>`)
+          .join("");
+        return `
+          <div class="slot">
+            <div class="status-line">
+              <strong>Slot ${slot.slot_number}</strong>
+              <div>${slot.spool_id ? statusPill("assigned") : statusPill(slot.status)}</div>
             </div>
-            <div class="ams-grid">
-              ${unit.slots
-                .map((slot) => {
-                  const options = ["<option value=''>-- empty --</option>",
-                    ...state.spools.map((s) => `<option value="${s.id}" ${slot.spool_id === s.id ? "selected" : ""}>${s.description}</option>`)];
-                  return `
-                    <div class="slot-card">
-                      <div class="slot-head">
-                        <strong>Slot ${slot.slot_number}</strong>
-                        <span class="muted">ID: ${slot.id}</span>
-                      </div>
-                      <label style="margin-top:0.4rem">Assign spool</label>
-                      <select data-slot="${slot.id}">
-                        ${options.join("")}
-                      </select>
-                      <button data-assign="${slot.id}" style="width:auto; margin-top:0.35rem">Update slot</button>
-                    </div>`;
-                })
-                .join("")}
-            </div>`;
-          list.appendChild(wrapper);
-        });
+            <div class="muted">ID: ${slot.id}</div>
+            <label style="margin-top: 0.5rem">Assign spool</label>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <select data-slot="${slot.id}">
+                <option value="">-- choose --</option>
+                ${options}
+              </select>
+              <button data-assign="${slot.id}" style="width: auto; padding: 0.55rem 0.9rem">Assign</button>
+            </div>
+            ${slot.spool_id ? `<div class="muted" style="margin-top:0.4rem">Currently: ${slot.spool_id}</div>` : ""}
+          </div>
+        `;
+      }
 
-        list.querySelectorAll("button[data-assign]").forEach((btn) => {
-          btn.addEventListener("click", async (e) => {
-            e.preventDefault();
-            const slotId = Number(btn.dataset.assign);
-            const select = list.querySelector(`select[data-slot='${slotId}']`);
-            const spoolId = select.value || null;
-            try {
-              await api(`/ams/slots/${slotId}/assign`, { method: "POST", body: JSON.stringify({ spool_id: spoolId }) });
-              toast("Slot updated");
-              refreshData();
-            } catch (error) {
-              toast(error.message, "error");
-            }
+      async function loadAms() {
+        const list = document.getElementById("ams-list");
+        list.innerHTML = "<div class='muted'>Loading AMS units…</div>";
+        try {
+          const [units, spools] = await Promise.all([api("/ams"), api("/spools")]);
+          list.innerHTML = "";
+          units.forEach((unit) => {
+            const wrapper = document.createElement("div");
+            wrapper.className = "slot";
+            wrapper.innerHTML = `
+              <div class="status-line">
+                <div>
+                  <strong>${unit.name}</strong>
+                  <div class="muted">ID: ${unit.id}</div>
+                </div>
+                <button class="rename" data-unit="${unit.id}" style="width:auto">Rename</button>
+              </div>
+              <div class="slots" style="margin-top:0.75rem">
+                ${unit.slots.map((slot) => renderSlot(slot, spools)).join("")}
+              </div>
+            `;
+            list.appendChild(wrapper);
           });
-        });
-
-        list.querySelectorAll("button[data-save-unit]").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const unitId = Number(btn.dataset.saveUnit);
-            const name = list.querySelector(`input[data-rename='${unitId}']`).value;
-            const slots = Number(list.querySelector(`input[data-slot-count='${unitId}']`).value);
-            try {
-              await api(`/ams/${unitId}`, { method: "PATCH", body: JSON.stringify({ name, slots }) });
-              toast("AMS updated");
-              refreshData();
-            } catch (error) {
-              toast(error.message, "error");
-            }
+          list.querySelectorAll("button[data-assign]").forEach((btn) => {
+            btn.addEventListener("click", async (e) => {
+              e.preventDefault();
+              const slotId = Number(btn.dataset.assign);
+              const select = list.querySelector(`select[data-slot='${slotId}']`);
+              const spoolId = select.value;
+              if (!spoolId) return toast("Select a spool first", "error");
+              try {
+                await api(`/ams/slots/${slotId}/assign`, {method: "POST", body: JSON.stringify({spool_id: spoolId})});
+                toast("Slot updated");
+                loadAms();
+                loadSpools();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
           });
-        });
+          list.querySelectorAll("button.rename").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const unitId = Number(btn.dataset.unit);
+              const name = prompt("New name for this AMS", "AMS-" + unitId);
+              if (!name) return;
+              try {
+                await api(`/ams/${unitId}`, {method: "PATCH", body: JSON.stringify({name})});
+                toast("AMS renamed");
+                loadAms();
+              } catch (error) {
+                toast(error.message, "error");
+              }
+            });
+          });
+        } catch (error) {
+          list.innerHTML = `<div class='muted'>${error.message}</div>`;
+        }
       }
 
       async function submitAms(event) {
@@ -630,39 +435,25 @@
         const payload = Object.fromEntries(new FormData(form));
         payload.slots = Number(payload.slots) || 0;
         try {
-          await api("/ams", { method: "POST", body: JSON.stringify(payload) });
+          await api("/ams", {method: "POST", body: JSON.stringify(payload)});
           toast("AMS unit added");
           form.reset();
           document.getElementById("ams-slots").value = 4;
-          refreshData();
+          loadAms();
         } catch (error) {
           toast(error.message, "error");
         }
       }
 
-      function wireTabs() {
-        dashboardTab.addEventListener("click", () => {
-          dashboardTab.classList.add("active");
-          adminTab.classList.remove("active");
-          adminPanel.classList.add("hidden");
-          document.getElementById("ams-overview-panel").classList.remove("hidden");
-          document.getElementById("inventory-panel").classList.remove("hidden");
-        });
-        adminTab.addEventListener("click", () => {
-          adminTab.classList.add("active");
-          dashboardTab.classList.remove("active");
-          adminPanel.classList.remove("hidden");
-          document.getElementById("ams-overview-panel").classList.add("hidden");
-          document.getElementById("inventory-panel").classList.add("hidden");
-        });
-      }
-
       function init() {
         document.getElementById("spool-form").addEventListener("submit", submitSpool);
         document.getElementById("ams-form").addEventListener("submit", submitAms);
-        document.getElementById("refresh").addEventListener("click", refreshData);
-        wireTabs();
-        refreshData();
+        document.getElementById("refresh").addEventListener("click", () => {
+          loadSpools();
+          loadAms();
+        });
+        loadSpools();
+        loadAms();
       }
 
       document.addEventListener("DOMContentLoaded", init);
