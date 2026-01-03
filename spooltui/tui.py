@@ -20,9 +20,9 @@ logging.basicConfig(
 logger = logging.getLogger("spooltui")
 
 DUNGEON_FLAVOR = [
-    "You step into the Filament Keep—rows of reels echo like stalactites.",
-    "Faint whirs of AMS sentinels guard the treasure slots ahead.",
-    "Crates of color and material line the hall; choose your next action wisely.",
+    "Configure AMS units, then create spools and assign to AMS slots.",
+    "Unloaded spools can be assigned to the library.",
+    "Spare spools can be loaded with unusued bulk filament.",
 ]
 
 COLOR_MAP: Dict[str, str] = {
@@ -82,12 +82,10 @@ def _slot_labels(slot: Dict[str, Any]) -> tuple[str, str, str]:
     desc = "Empty"
     color_label = "-"
     remaining = None
-    spool_type = None
 
     if isinstance(spool, dict):
         desc = spool.get("description") or spool.get("material", {}).get("name") or "Spool"
         color_value = spool.get("color")
-        spool_type = spool.get("spool_type")
         if isinstance(color_value, dict):
             color_label = color_value.get("name", "?")
         elif isinstance(color_value, str):
@@ -101,11 +99,7 @@ def _slot_labels(slot: Dict[str, Any]) -> tuple[str, str, str]:
     if remaining_text:
         color_display = f"{color_display} | {remaining_text}" if color_display != "-" else remaining_text
 
-    status_label = status
-    if spool_type and spool_type != "spool":
-        status_label = f"{status} ({spool_type})"
-
-    return status_label, desc, color_display
+    return status, desc, color_display
 
 
 def render_ams_ascii(unit_id: int | str, name: str, slots: List[Dict[str, Any]]) -> List[str]:
@@ -167,7 +161,7 @@ def faint(s: str) -> str:
 
 def render_menu(term: Terminal) -> None:
     print(term.clear + term.bold_underline("Spool Manager Terminal"))
-    print(term.bold("Dungeon Trail"))
+    print(term.bold("AMS Config"))
     for line in DUNGEON_FLAVOR:
         print(faint(" " + line))
     print()
