@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 import textwrap
-from typing import Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from blessed import Terminal
 
@@ -67,6 +67,74 @@ def color_block(term: Terminal, color: str | None) -> str:
     return f"[{color}]"
 
 
+def _center(text: str, width: int) -> str:
+    trimmed = text[: width - 1] if len(text) > width else text
+    pad = max(0, width - len(trimmed))
+    left = pad // 2
+    right = pad - left
+    return " " * left + trimmed + " " * right
+
+
+def _slot_labels(slot: Dict[str, Any]) -> tuple[str, str, str]:
+    spool = slot.get("spool") or slot.get("spool_id")
+    status = slot.get("status", "?")
+
+    desc = "Empty"
+    color_label = "-"
+    remaining = None
+    spool_type = None
+
+    if isinstance(spool, dict):
+        desc = spool.get("description") or spool.get("material", {}).get("name") or "Spool"
+        color_value = spool.get("color")
+        spool_type = spool.get("spool_type")
+        if isinstance(color_value, dict):
+            color_label = color_value.get("name", "?")
+        elif isinstance(color_value, str):
+            color_label = color_value
+        remaining = spool.get("remaining_g")
+    elif isinstance(spool, str):
+        desc = spool
+
+    remaining_text = f"{remaining}g" if remaining is not None else ""
+    color_display = color_label
+    if remaining_text:
+        color_display = f"{color_display} | {remaining_text}" if color_display != "-" else remaining_text
+
+    status_label = status
+    if spool_type and spool_type != "spool":
+        status_label = f"{status} ({spool_type})"
+
+    return status_label, desc, color_display
+
+
+def render_ams_ascii(unit_id: int | str, name: str, slots: List[Dict[str, Any]]) -> List[str]:
+    if not slots:
+        return ["(no slots reported)"]
+
+    cell_width = max(12, min(18, (80 // max(1, len(slots))) - 1))
+    border = "+" + "+".join(["-" * cell_width for _ in slots]) + "+"
+    title_inner_width = len(border) - 2
+    title_line = "|" + _center(f"AMS {unit_id}: {name}", title_inner_width) + "|"
+
+    slot_labels = [f"Slot {slot.get('slot_number')}" for slot in slots]
+    status_labels = []
+    desc_labels = []
+    color_labels = []
+    for slot in slots:
+        status, desc, color_label = _slot_labels(slot)
+        status_labels.append(status)
+        desc_labels.append(desc)
+        color_labels.append(color_label)
+
+    row_slot = "|" + "|".join(_center(text, cell_width) for text in slot_labels) + "|"
+    row_status = "|" + "|".join(_center(text, cell_width) for text in status_labels) + "|"
+    row_desc = "|" + "|".join(_center(text, cell_width) for text in desc_labels) + "|"
+    row_color = "|" + "|".join(_center(text, cell_width) for text in color_labels) + "|"
+
+    return [border, title_line, border, row_slot, row_desc, row_color, border]
+
+
 def prompt_input(term: Terminal, label: str) -> str:
     print(term.clear + term.bold(label))
     print(faint("Press Enter when done.\nESC cancels."))
@@ -110,6 +178,7 @@ def render_menu(term: Terminal) -> None:
     print(" 4) Assign slot")
     print(" 5) Mark spool opened / back to stock")
     print(" 6) Check for updates / redeploy")
+    print(" a) Admin / configuration")
     print(" q) Quit")
 
 
@@ -146,25 +215,7 @@ def view_ams_status(term: Terminal, client: SpoolManagerAPI) -> None:
             continue
 
         lines.append(term.bold(f"[{unit_id}] {name} (slots: {len(slots)})"))
-        for slot in slots:
-            slot_no = slot.get("slot_number")
-            slot_id = slot.get("id")
-            status = slot.get("status", "?")
-            spool = slot.get("spool") or slot.get("spool_id")
-
-            color = None
-            desc = ""
-            remaining = None
-            if isinstance(spool, dict):
-                desc = spool.get("description", "")
-                color = spool.get("color")
-                remaining = spool.get("remaining_g")
-            elif isinstance(spool, str):
-                desc = spool
-
-            patch = color_block(term, color)
-            remaining_text = f" | {remaining}g" if remaining is not None else ""
-            lines.append(f" Slot {slot_no}: {status} {patch} {desc}{remaining_text}")
+        lines.extend(render_ams_ascii(unit_id, name, slots))
         lines.append("")
 
     _print_lines(term, "AMS Status", lines)
@@ -253,7 +304,7 @@ def view_spool_lookup(term: Terminal, client: SpoolManagerAPI) -> None:
 
 def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
     try:
-        units = client.list_ams_units()
+        units = client.list_ams_units(include_library=False)
     except Exception as exc:  # pragma: no cover - runtime feedback only
         display_error(term, exc)
         wait_for_back(term)
@@ -262,6 +313,8 @@ def assign_slot(term: Terminal, client: SpoolManagerAPI) -> None:
     print(term.clear + term.bold("Available slots (enter slot ID):"))
     for unit in units:
         unit_id = unit.get("id")
+        if unit_id == 0:
+            continue
         name = unit.get("name", "")
         print(term.bold(f"[{unit_id}] {name}"))
         for slot in unit.get("slots", []):
@@ -322,6 +375,86 @@ def mark_status(term: Terminal, client: SpoolManagerAPI) -> None:
     wait_for_back(term)
 
 
+def _choose_unit(term: Terminal, units: List[Dict[str, Any]]) -> int | None:
+    print(term.clear + term.bold("Select AMS unit (default 1):"))
+    for unit in units:
+        print(f" [{unit.get('id')}] {unit.get('name', '')} ({len(unit.get('slots', []))} slots)")
+
+    raw = prompt_input(term, "Enter AMS unit ID (or Enter for 1): ")
+    if raw == "":
+        return 1
+
+    try:
+        return int(raw)
+    except ValueError:
+        display_error(term, ValueError("Invalid AMS unit ID"))
+        wait_for_back(term)
+        return None
+
+
+def configure_ams_slots(term: Terminal, client: SpoolManagerAPI) -> None:
+    try:
+        units = client.list_ams_units(include_library=False)
+    except Exception as exc:  # pragma: no cover - runtime feedback only
+        display_error(term, exc)
+        wait_for_back(term)
+        return
+
+    unit_id = _choose_unit(term, units)
+    if unit_id is None:
+        return
+
+    raw_slots = prompt_input(term, f"Enter desired slot count for AMS {unit_id} (1-16): ")
+    if raw_slots == "":
+        return
+
+    try:
+        slots = int(raw_slots)
+    except ValueError:
+        display_error(term, ValueError("Slot count must be a number"))
+        wait_for_back(term)
+        return
+
+    if slots < 1 or slots > 16:
+        display_error(term, ValueError("Slot count must be between 1 and 16"))
+        wait_for_back(term)
+        return
+
+    try:
+        result = client.update_ams_unit(unit_id, {"slots": slots})
+        logger.info("ams_slots_updated", extra={"unit_id": unit_id, "slots": slots})
+    except Exception as exc:  # pragma: no cover - runtime feedback only
+        display_error(term, exc)
+        wait_for_back(term)
+        return
+
+    lines = [
+        f"AMS {unit_id} slots updated to {slots}.",
+        f"Name: {result.get('name', '')}",
+    ]
+    _print_lines(term, "AMS updated", lines)
+    wait_for_back(term)
+
+
+def admin_menu(term: Terminal, client: SpoolManagerAPI) -> None:
+    while True:
+        print(term.clear + term.bold("Admin / configuration"))
+        print(" 1) Change AMS slot count")
+        print(" b) Back")
+
+        with term.cbreak():
+            key = term.inkey()
+
+        if not key:
+            continue
+
+        key_str = str(key).lower()
+        if key_str == "1":
+            configure_ams_slots(term, client)
+        elif key_str == "b" or key.name == "KEY_ESCAPE":
+            return
+
+
 def _run(cmd: List[str], cwd: str) -> tuple[int, str]:
     p = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
     out = (p.stdout or "") + (p.stderr or "")
@@ -336,24 +469,38 @@ def _tracked_dirty(repo_root: str) -> bool:
     return out.strip() != ""
 
 
-def _remote_master_update(repo_root: str, remote: str, branch: str) -> List[str]:
+def _remote_master_update(
+    repo_root: str, remote: str, branch: str, progress: Optional[Callable[[str], None]] = None
+) -> List[str]:
     """
     Remote is the master: force local checkout to match remote/branch, then restart containers.
     Keeps local runtime/config files by excluding them from git clean.
+
+    A ``progress`` callback can be provided to surface incremental updates while commands run,
+    so the TUI doesn't appear to hang on long operations (e.g., docker builds).
     """
     logs: List[str] = []
 
+    def emit(line: str) -> None:
+        if progress:
+            progress(line)
+        logs.append(line)
+
     def run_or_raise(cmd: List[str]) -> None:
+        emit(f"$ {' '.join(cmd)}")
         code, out = _run(cmd, cwd=repo_root)
-        logs.append(f"$ {' '.join(cmd)}")
         if out:
-            logs.append(out)
+            for segment in out.splitlines():
+                emit(segment)
         if code != 0:
+            emit(f"Command failed ({code})")
             raise UpdateError(f"Command failed ({code}): {' '.join(cmd)}\n{out}")
 
+    emit("Starting update...")
     run_or_raise(["git", "fetch", remote])
     run_or_raise(["git", "reset", "--hard", f"{remote}/{branch}"])
 
+    emit("Cleaning untracked files (preserving runtime/config)")
     # Clean untracked, but KEEP your runtime/config stuff.
     run_or_raise(
         [
@@ -371,7 +518,9 @@ def _remote_master_update(repo_root: str, remote: str, branch: str) -> List[str]
         ]
     )
 
+    emit("Rebuilding containers via docker compose...")
     run_or_raise(["docker", "compose", "up", "-d", "--build"])
+    emit("Update finished.")
     return logs
 
 
@@ -419,7 +568,13 @@ def check_for_updates(term: Terminal) -> None:
                 return
             if key_str == "u":
                 try:
-                    logs = _remote_master_update(status.repo_root, status.remote, status.branch)
+                    print(term.clear + term.bold("Running update..."))
+                    logs = _remote_master_update(
+                        status.repo_root,
+                        status.remote,
+                        status.branch,
+                        progress=lambda line: print(line, flush=True),
+                    )
                     refreshed_status = check_updates()
                 except UpdateError as exc:  # pragma: no cover - environment dependent
                     display_error(term, exc)
@@ -491,6 +646,8 @@ def main(argv: List[str] | None = None) -> int:
                 mark_status(term, client)
             elif key_str == "6":
                 check_for_updates(term)
+            elif key_str == "a":
+                admin_menu(term, client)
 
     print(term.clear + term.bold("Farewell, adventurer."))
     return 0
